@@ -1,0 +1,6 @@
+{
+  "routes": [
+    { "path": "/", "title": "SignalForge dashboard" },
+    { "path": "/404", "title": "Not found" }
+  ]
+}

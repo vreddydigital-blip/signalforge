@@ -1,0 +1,66 @@
+# SignalForge — InfinityFree (Apache) configuration
+Options -Indexes
+DirectoryIndex index.html
+
+# Never serve the database credentials file, even if PHP is misconfigured.
+<Files "config.php">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>
+
+# Block dotfiles (.env, .git, .htaccess itself is still read by Apache).
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  # The tracker is embedded on other sites, so it must stay fetchable cross-origin.
+  <FilesMatch "tracker\.js$">
+    Header set Access-Control-Allow-Origin "*"
+    Header set Cache-Control "public, max-age=300"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  # Vite fingerprints asset filenames, so they can be cached for a year.
+  <FilesMatch "\.(js|css|woff2?|png|jpe?g|gif|svg|webp|ico)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+  ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+# Single-page app: unknown paths fall back to index.html so client routing works.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Force HTTPS (InfinityFree issues a free certificate; harmless if not yet active).
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+  # Real files and directories (assets, api/*.php, tracker.js) are served as-is.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  RewriteRule ^ index.html [L]
+</IfModule>
