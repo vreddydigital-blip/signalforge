@@ -33,5 +33,11 @@ services:
         value: "*"
       - key: LOG_LEVEL
         value: INFO
+      # Self keep-alive: pings this service's own /health every 10 minutes so
+      # the free tier does not suspend it. Set to "off" to disable.
+      - key: SIGNALFORGE_KEEPALIVE
+        value: "on"
+      - key: SIGNALFORGE_KEEPALIVE_INTERVAL
+        value: "600"
       - key: PYTHON_VERSION
         value: "3.12"
