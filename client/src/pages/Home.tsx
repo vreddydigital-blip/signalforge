@@ -739,34 +739,46 @@ function CreateExperimentModal({ plan, limit, onClose, onCreated, onUpgrade }: {
     setVariantNames(current => current.map((variant, variantIndex) => variantIndex === index ? value : variant));
   };
 
-  const checkPage = () => {
+  // Returns the validation result directly. It used to only call setUrlChecked()
+  // and the caller then re-read `urlChecked` from the same render closure, which
+  // is still the OLD value (React state updates are async) — so "Continue to
+  // variants" always bailed out and the wizard never advanced past step 1.
+  const checkPage = (): boolean => {
     const value = pageUrl.trim();
     try {
       const parsed = new URL(value);
       if (!/^https?:$/.test(parsed.protocol)) throw new Error("protocol");
       setUrlError("");
       setUrlChecked(true);
+      return true;
     } catch {
       setUrlChecked(false);
       setUrlError("Enter a valid page URL beginning with https://");
+      return false;
     }
   };
 
-  const generateHypothesis = () => {
+  const buildHypothesis = () => {
     const audienceText = audience.toLowerCase();
     const goalText = goal.toLowerCase();
     const frameworkText = framework === "Bayesian testing" ? "using an evidence-led decision threshold" : `using the ${framework} lens`;
     const suggestion = observedInsight.trim() && experienceChange.trim() && behaviorReason.trim()
       ? `Because ${observedInsight.trim()}, changing ${experienceChange.trim()} for ${audienceText} should improve ${goalText}, measured by ${activeEvent.toLowerCase()}, because ${behaviorReason.trim()}, ${frameworkText}.`
       : `Because ${audienceText} may hesitate before ${goalText}, changing the experience should improve ${goalText} by making the value clearer and reducing friction, ${frameworkText}.`;
-    setHypothesis(suggestion.slice(0, 240));
+    return suggestion.slice(0, 240);
+  };
+
+  const generateHypothesis = () => {
+    setHypothesis(buildHypothesis());
   };
 
   const goToVariants = () => {
     if (!name.trim()) return;
-    if (!urlChecked) checkPage();
-    if (!urlChecked) return;
-    if (!hypothesis.trim()) generateHypothesis();
+    // Validate synchronously and use the returned value, not the stale state.
+    if (!checkPage()) return;
+    // Same stale-state trap: setHypothesis() would not be visible to the
+    // `hypothesis` variable in this closure, so compute the text directly.
+    if (!hypothesis.trim()) setHypothesis(buildHypothesis());
     setStep(2);
   };
 
