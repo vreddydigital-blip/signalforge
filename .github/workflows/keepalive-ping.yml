@@ -1,0 +1,85 @@
+# Backup keep-alive pinger for the SignalForge orchestrator.
+#
+# WHY THIS EXISTS
+# The orchestrator pings its own /health every 10 minutes (see
+# orchestrator/app/keepalive.py). That prevents Render's free tier from
+# suspending the service, but it cannot RECOVER from a suspension: once Render
+# freezes the container, the thread freezes with it. This workflow is the
+# external pinger that wakes a cold service.
+#
+# It is a BACKUP, not the primary mechanism. GitHub's scheduled workflows are
+# best-effort and are frequently delayed 5-20 minutes under load, and GitHub
+# disables schedules on repos with no activity for 60 days. The in-process
+# thread is the reliable part; this is the safety net.
+#
+# TO ENABLE
+# This file lives in docs/ci/ because the personal access token used to push
+# did not carry the `workflow` scope, and GitHub rejects any file under
+# .github/workflows/ without it. To activate, either:
+#
+#   1. On GitHub: open this file, click Raw, copy, then Add file -> Create new
+#      file, name it .github/workflows/keepalive-ping.yml, paste, commit.
+#   2. From the CLI: use a token with both `repo` and `workflow` scopes, then
+#      git mv docs/ci/keepalive-ping.yml .github/workflows/ && git commit -m
+#      "Enable keep-alive pinger" && git push
+#
+# COST
+# 144 runs/day at ~5s each. Public repos: free. Private repos: this is well
+# inside the 2,000 free minutes/month, but it is not zero - roughly 12 minutes
+# a day, ~360/month.
+
+name: Keep-alive ping
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub's minimum is 5; 10 matches the in-process thread
+    # and stays comfortably under Render's ~15 minute idle threshold.
+    - cron: "*/10 * * * *"
+  # Lets you fire it by hand from the Actions tab to test it.
+  workflow_dispatch:
+
+# If a run is still going when the next one starts, skip rather than queue.
+concurrency:
+  group: keepalive-ping
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /health
+        env:
+          HEALTH_URL: https://signalforge-orchestrator.onrender.com/health
+        run: |
+          set -uo pipefail
+
+          # A cold Render start takes 30-60s, so allow a generous timeout and
+          # retry a few times before calling it a failure.
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt: GET $HEALTH_URL"
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+              --max-time 90 \
+              -H 'User-Agent: signalforge-keepalive-gha/1.0' \
+              -H 'Accept: application/json' \
+              "$HEALTH_URL" || echo "000")
+
+            echo "HTTP $code"
+            if [ -s /tmp/health.json ]; then
+              head -c 500 /tmp/health.json; echo
+            fi
+
+            if [ "$code" = "200" ]; then
+              echo "Service is awake."
+              exit 0
+            fi
+
+            echo "Not 200 - waiting 30s before retrying."
+            sleep 30
+          done
+
+          echo "::error::Orchestrator did not return 200 after 3 attempts."
+          exit 1
