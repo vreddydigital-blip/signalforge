@@ -18,6 +18,10 @@ function orch_remote_config()
         'token' => trim((string) cfg('orchestrator_token')),
         'mode'  => strtolower(trim((string) cfg('orchestrator_mode'))),
         'timeout' => (int) (cfg('orchestrator_timeout') ?: 20),
+        // The health probe is polled by the dashboard, so it must NOT wait out a
+        // full cold start - that would freeze the UI for a minute. A short probe
+        // reports "asleep" quickly; the actual run call uses the long timeout.
+        'health_timeout' => (int) (cfg('orchestrator_health_timeout') ?: 8),
     ];
 }
 
@@ -38,10 +42,18 @@ function orch_remote_configured()
  * Uses cURL when available and falls back to stream wrappers, because some
  * shared hosts disable one or the other.
  */
-function orch_remote_request($method, $path, $payload = null)
+function orch_remote_request($method, $path, $payload = null, $timeoutOverride = null)
 {
     $conf = orch_remote_config();
     $url = rtrim($conf['url'], '/') . $path;
+    $timeout = $timeoutOverride !== null ? (int) $timeoutOverride : $conf['timeout'];
+    // A cold start can hold this request open for the full timeout. Shared hosts
+    // often cap max_execution_time at 30s, which would kill the request mid-wait
+    // and surface as a confusing 500 instead of a clean result. Raise it to cover
+    // the HTTP timeout (plus a little slack) where the host allows it.
+    if (function_exists('set_time_limit')) {
+        @set_time_limit($timeout + 15);
+    }
     $headers = ['Accept: application/json'];
     if ($conf['token'] !== '') {
         $headers[] = 'Authorization: Bearer ' . $conf['token'];
@@ -59,7 +71,7 @@ function orch_remote_request($method, $path, $payload = null)
             CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_TIMEOUT        => $conf['timeout'],
+            CURLOPT_TIMEOUT        => $timeout,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 3,
             CURLOPT_SSL_VERIFYPEER => true,
@@ -83,7 +95,7 @@ function orch_remote_request($method, $path, $payload = null)
             'method'        => $method,
             'header'        => implode("\r\n", $headers),
             'content'       => $body === null ? '' : $body,
-            'timeout'       => $conf['timeout'],
+            'timeout'       => $timeout,
             'ignore_errors' => true,
         ],
     ]);
@@ -106,7 +118,7 @@ function orch_remote_health()
     if (!orch_remote_configured()) {
         return ['reachable' => false, 'degraded' => true, 'provider' => null, 'error' => 'No orchestrator_url configured'];
     }
-    list($ok, $status, $body, $error) = orch_remote_request('GET', '/health');
+    list($ok, $status, $body, $error) = orch_remote_request('GET', '/health', null, orch_remote_config()['health_timeout']);
     if (!$ok) {
         return ['reachable' => false, 'degraded' => true, 'provider' => null, 'error' => $error];
     }

@@ -136,8 +136,28 @@ def signal_analyst(data: dict[str, Any]) -> dict[str, Any]:
         if lead is None:
             continue
         analysed += 1
-        probability = _i(lead.get("probability"))
-        uplift = _f(lead.get("uplift"))
+        # Prefer the probability/uplift the PHP side precomputed, but never trust
+        # their absence: a caller that sends only raw visitors/conversions would
+        # otherwise be reported as "0% probability, +0.0% uplift" on data that
+        # clearly shows a winner. Recompute from the counts in that case.
+        if lead.get("probability") is None or lead.get("uplift") is None:
+            control_visitors = _i(control.get("visitors"))
+            control_conversions = _i(control.get("conversions"))
+            lead_visitors = _i(lead.get("visitors"))
+            lead_conversions = _i(lead.get("conversions"))
+            control_rate = control_conversions / control_visitors if control_visitors > 0 else 0.0
+            lead_rate = lead_conversions / lead_visitors if lead_visitors > 0 else 0.0
+            if lead.get("uplift") is None:
+                uplift = ((lead_rate - control_rate) / control_rate) * 100.0 if control_rate > 0 else 0.0
+            else:
+                uplift = _f(lead.get("uplift"))
+            if lead.get("probability") is None:
+                probability = int(round(prob_to_beat(lead_visitors, lead_conversions, control_visitors, control_conversions)))
+            else:
+                probability = _i(lead.get("probability"))
+        else:
+            probability = _i(lead.get("probability"))
+            uplift = _f(lead.get("uplift"))
         if probability >= 90:
             decisive += 1
         elif probability >= 60:
