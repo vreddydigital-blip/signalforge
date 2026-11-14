@@ -3,6 +3,7 @@
 require __DIR__ . '/lib.php';
 require __DIR__ . '/orchestrator.php';
 require __DIR__ . '/remote.php';
+require __DIR__ . '/v2.php';
 
 header('Cache-Control: no-store');
 $route = isset($_GET['route']) ? (string) $_GET['route'] : '';
@@ -141,6 +142,19 @@ function load_experiments($user)
 }
 
 try {
+    // v2 routes are namespaced and handled before the v1 switch, so the
+    // original API surface stays byte-for-byte compatible.
+    if (strpos($route, 'v2.') === 0) {
+        $v2user = current_user();
+        if (!$v2user) {
+            fail('Please login (10001)', 'UNAUTHORIZED', 401);
+        }
+        if (v2_handle($route, $method, $v2user) !== false) {
+            exit;
+        }
+        fail('Unknown route.', 'NOT_FOUND', 404);
+    }
+
     switch ($route) {
         case 'auth.me':
             $user = current_user();

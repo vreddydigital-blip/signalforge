@@ -34,6 +34,9 @@ import {
   Users,
   X,
   Zap,
+  Eye,
+  Globe,
+  Link2,
 } from "lucide-react";
 import {
   Area,
@@ -48,6 +51,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Orchestration from "@/pages/Orchestration";
+import {
+  V2DashboardPage, V2ExperimentsPage, V2TrackingPage, V2IntegrationsPage,
+  V2AiPage, V2CrawlerPage, V2VisualPage, V2CompetitorsPage, V2EcommercePage,
+  V2SystemPage, V2OnboardingBanner,
+} from "@/pages/V2Pages";
 
 type ExperimentStatus = "Active" | "Draft" | "Paused" | "Completed";
 type ExperimentKind = "A/B test" | "Multivariate";
@@ -495,28 +503,11 @@ export default function Home() {
     return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "#8a91a2" }}>Loading experiments…</div>;
   }
 
-  // Only the two tabs that render experiment data are replaced by the first-run
-  // screen. Every other tab (Agent mesh, Tracking setup, ...) must stay reachable
-  // before the first experiment exists, otherwise a new workspace is a dead end.
-  if (!selectedExperiment && (activeNav === "Overview" || activeNav === "Experiments")) {
-    return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}>
-        <div style={{ maxWidth: 460 }}>
-          <div className="brand-mark" style={{ margin: "0 auto 16px" }}><FlaskConical size={20} strokeWidth={2.5} /></div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Create your first experiment</h1>
-          <p style={{ color: "#6b7385", marginBottom: 20 }}>Set up a hypothesis, add variants and install the tracking snippet. Results will appear here as visitors arrive.</p>
-          <Button onClick={openCreate}><Plus size={16} />Create experiment</Button>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
-            <Button variant="ghost" onClick={() => setActiveNav("Agent mesh")}><Network size={15} />Agent mesh</Button>
-            <Button variant="ghost" onClick={() => setActiveNav("Tracking setup")}><Code2 size={15} />Tracking setup</Button>
-            <Button variant="ghost" onClick={() => logout()}>Sign out</Button>
-          </div>
-        </div>
-        {toast && <div className="toast"><Check size={15} />{toast}</div>}
-        {isCreateOpen && <CreateExperimentModal plan={plan} limit={currentLimit} onClose={() => setCreateOpen(false)} onCreated={handleCreated} onUpgrade={() => { setCreateOpen(false); changePlan("Scale"); notify("Scale plan enabled."); }} />}
-      </div>
-    );
-  }
+  // The first-run screen used to replace the ENTIRE shell, which hid the sidebar
+  // and made a brand-new workspace a dead end: no way to reach Reporting, the
+  // crawler, or anything else until an experiment existed. It is now rendered
+  // INSIDE the page body (see firstRun below), so navigation always stays available.
+  const firstRun = !selectedExperiment && (activeNav === "Overview" || activeNav === "Experiments");
 
   const activeExperiments = experiments.filter(item => item.status === "Active");
   const totalVisitors = experiments.reduce((sum, item) => sum + item.variants.reduce((inner, variant) => inner + variant.visitors, 0), 0);
@@ -564,6 +555,25 @@ export default function Home() {
           <button className={`nav-item ${activeNav === "CRO intelligence" ? "active" : ""}`} onClick={() => setActiveNav("CRO intelligence")}><Zap size={17} /><span>CRO intelligence</span></button>
           <button className={`nav-item ${activeNav === "Agent mesh" ? "active" : ""}`} onClick={() => setActiveNav("Agent mesh")}><Network size={17} /><span>Agent mesh</span><span className="nav-new">New</span></button>
         </nav>
+
+        <div className="sidebar-section-label second">Grow</div>
+        <nav className="nav-list">
+          {[
+            { label: "Reporting", icon: BarChart3 },
+            { label: "Experiments v2", icon: Beaker },
+            { label: "Tracking & analytics", icon: Activity },
+            { label: "Integrations", icon: Link2 },
+            { label: "AI recommendations", icon: Sparkles },
+            { label: "Website crawler", icon: Search },
+            { label: "Visual analysis", icon: Eye },
+            { label: "Competitors", icon: Globe },
+            { label: "Ecommerce", icon: TrendingUp },
+            { label: "System health", icon: ShieldCheck },
+          ].map(item => {
+            const Icon = item.icon;
+            return <button key={item.label} className={`nav-item ${activeNav === item.label ? "active" : ""}`} onClick={() => setActiveNav(item.label)}><Icon size={17} /><span>{item.label}</span></button>;
+          })}
+        </nav>
         <div className="sidebar-section-label second manage-label">Manage</div>
         <nav className="nav-list">
           <button className={`nav-item ${activeNav === "Workspace settings" ? "active" : ""}`} onClick={() => setActiveNav("Workspace settings")}><Settings2 size={17} /><span>Workspace settings</span></button>
@@ -593,7 +603,31 @@ export default function Home() {
         </header>
 
         <div className="page-content">
-          {activeNav === "Tracking setup" ? <TrackingSetup notify={notify} /> : activeNav === "Insights" ? <PredictiveInsights notify={notify} /> : activeNav === "CRO intelligence" ? <IntelligenceCenter notify={notify} /> : activeNav === "Agent mesh" ? <Orchestration notify={notify} /> : activeNav === "CRO frameworks" ? <FrameworkLibrary notify={notify} /> : activeNav === "Workspace settings" ? <WorkspaceSettings notify={notify} /> : <>
+          {firstRun ? (
+            <div className="v2-page">
+              <section className="page-heading">
+                <div>
+                  <div className="overline"><span className="live-pulse" />First run</div>
+                  <h1>Create your first experiment</h1>
+                  <p>Set up a hypothesis, add variants and install the tracking snippet. Results appear as visitors arrive.</p>
+                </div>
+              </section>
+              <Card className="v2-card">
+                <CardContent style={{ padding: 28, textAlign: "center" }}>
+                  <div className="v2-empty-icon" style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><FlaskConical size={28} strokeWidth={2.2} /></div>
+                  <p style={{ color: "#6b7385", marginBottom: 18, maxWidth: 440, marginLeft: "auto", marginRight: "auto" }}>
+                    Everything else is already available from the sidebar — run a site audit, analyse a competitor, or set up tracking before you create a test.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                    <Button onClick={openCreate}><Plus size={16} />Create experiment</Button>
+                    <Button variant="ghost" onClick={() => setActiveNav("Website crawler")}><Search size={15} />Run a site audit</Button>
+                    <Button variant="ghost" onClick={() => setActiveNav("Tracking setup")}><Code2 size={15} />Tracking setup</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : activeNav === "Reporting" ? <V2DashboardPage notify={notify} /> : activeNav === "Experiments v2" ? <V2ExperimentsPage notify={notify} /> : activeNav === "Tracking & analytics" ? <V2TrackingPage notify={notify} /> : activeNav === "Integrations" ? <V2IntegrationsPage notify={notify} /> : activeNav === "AI recommendations" ? <V2AiPage notify={notify} /> : activeNav === "Website crawler" ? <V2CrawlerPage notify={notify} /> : activeNav === "Visual analysis" ? <V2VisualPage notify={notify} /> : activeNav === "Competitors" ? <V2CompetitorsPage notify={notify} /> : activeNav === "Ecommerce" ? <V2EcommercePage notify={notify} /> : activeNav === "System health" ? <V2SystemPage notify={notify} /> : activeNav === "Tracking setup" ? <TrackingSetup notify={notify} /> : activeNav === "Insights" ? <PredictiveInsights notify={notify} /> : activeNav === "CRO intelligence" ? <IntelligenceCenter notify={notify} /> : activeNav === "Agent mesh" ? <Orchestration notify={notify} /> : activeNav === "CRO frameworks" ? <FrameworkLibrary notify={notify} /> : activeNav === "Workspace settings" ? <WorkspaceSettings notify={notify} /> : <>
+          <V2OnboardingBanner />
           <section className="page-heading">
             <div><div className="overline"><span className="live-pulse" />Live workspace</div><h1>Experiment cockpit</h1><p>Turn visitor behavior into your next confident decision.</p></div>
             <Button className="new-experiment-button" onClick={openCreate}><Plus size={17} />Create experiment</Button>

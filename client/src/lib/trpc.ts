@@ -108,6 +108,70 @@ export type OrchestratorEngine = {
   active: "langgraph" | "local" | "unavailable";
 };
 
+// ---------------- v2 types ----------------
+export type V2Totals = {
+  experiments: number; active: number; completed: number; draft: number;
+  exposures: number; conversions: number; conversionRate: number;
+  revenue: number; bestUplift: number | null; confidence: number;
+};
+export type V2Breakdown = { label: string; value: number }[];
+export type V2Dashboard = {
+  range: string;
+  totals: V2Totals;
+  series: { day: string; exposures: number; conversions: number; rate: number }[];
+  breakdowns: { device: V2Breakdown; browser: V2Breakdown; country: V2Breakdown; landingPage: V2Breakdown };
+  activity: { action: string; detail: string | null; experimentId: number | null; ago: string }[];
+};
+export type V2Winner = {
+  decision: "keep_control" | "choose_variant" | "collect_more";
+  reason: string; confidence: number; winnerVariantId: number | null;
+  variants: { id: number; name: string; isControl: boolean; visitors: number; conversions: number; rate: number; uplift: number; confidence: number }[];
+};
+export type V2Template = { key: string; name: string; category: string; description: string; payload: any };
+export type V2ExperimentDetail = {
+  id: number; name: string; kind: string; status: string; goal: string; framework: string;
+  pageUrl: string; hypothesis: string; audience: string; conversionEvent: string;
+  ownerName: string; templateKey: string; scheduledAt: string | null;
+  winnerVariantId: number | null; winnerReason: string;
+  variants: { id: number; name: string; isControl: boolean; color: string }[];
+  notes: { id: number; body: string; ago: string }[];
+  tags: string[];
+  history: { action: string; detail: string | null; ago: string }[];
+};
+export type V2Diagnostics = {
+  duplicates: { experimentId: number; event: string; visitorId: string; count: number }[];
+  health: { name: string; status: string; detail: string }[];
+  score: number; summary: string;
+};
+export type V2Integration = {
+  id: number; kind: string; name: string; config: any; status: string;
+  lastSyncAt: string | null; lastError: string | null;
+};
+export type V2Recommendation = {
+  id: number; title: string; why: string; impact: string; effort: string;
+  priority: number; status: string; source: string; experimentId: number | null;
+};
+export type V2Crawl = { id: number; siteUrl: string; status: string; pagesCrawled: number; score: number | null; error: string | null; ago: string };
+export type V2CrawlDetail = {
+  id: number; siteUrl: string; status: string; score: number | null; error: string | null;
+  pages: { id: number; url: string; statusCode: number | null; title: string; score: number | null; issues: any[] }[];
+  issues: { id: number; severity: string; category: string; title: string; detail: string; pageId: number | null }[];
+  counts: { critical: number; high: number; medium: number; low: number };
+};
+export type V2Competitor = { id: number; name: string; url: string; lastScan: { id: number; status: string; changes: any[] } | null };
+export type V2Ecommerce = {
+  range: string;
+  totals: { revenue: number; orders: number; sessions: number; revenuePerVisitor: number; averageOrderValue: number; cartAbandonment: number; checkoutCompletion: number; productConversionRate: number };
+  series: { day: string; revenue: number; orders: number; sessions: number }[];
+};
+export type V2Health = {
+  checks: { component: string; status: string; detail: string; latencyMs: number | null }[];
+  jobs: { key: string; lastRun: string | null; status: string | null; runs: number }[];
+  score: number; overall: string;
+};
+export type V2Onboarding = { steps: { key: string; label: string; done: boolean }[]; completed: number; total: number; percent: number };
+export type V2Version = { appVersion: string; schemaVersion: string; phpVersion: string; tables: number; missingTables: string[]; upToDate: boolean; checkedAt: string };
+
 type QueryOptions = { enabled?: boolean; refetchInterval?: number; refetchOnWindowFocus?: boolean; retry?: boolean };
 type Q<T> = (input?: unknown, options?: QueryOptions) => UseQueryResult<T, ApiError>;
 type MutationOptions<T> = { onSuccess?: (data: T) => void; onError?: (error: ApiError) => void };
@@ -115,7 +179,9 @@ type M<T> = (options?: MutationOptions<T>) => UseMutationResult<T, ApiError, any
 type Utils = { invalidate(): void; remove(): void; setData(input: unknown, data: unknown): void };
 
 interface Api {
-  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils }; orchestrator: { runs: Utils; state: Utils; engine: Utils } };
+  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils }; orchestrator: { runs: Utils; state: Utils; engine: Utils }; v2: any };
+  /** v2 feature routes (dashboard, crawler, AI, integrations, …). */
+  v2: any;
   auth: {
     me: { useQuery: Q<PublicUser | null> };
     login: { useMutation: M<PublicUser> };

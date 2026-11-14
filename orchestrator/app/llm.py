@@ -135,3 +135,39 @@ def narrate(agent_key: str, agent_name: str, objective: str, output: dict[str, A
     enriched["narrative"] = "groq"
     meta["used"] = True
     return enriched, meta
+
+
+def complete_text(prompt: str, system: str | None = None, max_tokens: int = 900) -> tuple[str, dict[str, Any]]:
+    """Single-shot completion for the app's AI features.
+
+    Returns ``(text, meta)``. ``meta["used"]`` is False whenever Groq was not
+    configured or the call failed, so the caller can label the result honestly
+    rather than presenting a fallback as model output.
+    """
+    meta: dict[str, Any] = {"provider": settings.provider, "model": None, "used": False}
+    client = _client()
+    if client is None:
+        meta["reason"] = "groq-not-configured" if not settings.groq_configured else "heuristic-mode"
+        return "", meta
+
+    meta["model"] = settings.groq_model
+    messages = []
+    if system:
+        messages.append(("system", system))
+    messages.append(("human", prompt))
+
+    try:
+        response = client.invoke(messages, max_tokens=max_tokens)
+        text = getattr(response, "content", "") or ""
+        if isinstance(text, list):
+            text = "".join(str(part) for part in text)
+        text = str(text).strip()
+        if not text:
+            meta["reason"] = "empty-response"
+            return "", meta
+        meta["used"] = True
+        return text, meta
+    except Exception as exc:  # noqa: BLE001 - any provider failure falls back
+        log.warning("groq completion failed: %s", exc)
+        meta["reason"] = f"groq-error: {type(exc).__name__}"
+        return "", meta

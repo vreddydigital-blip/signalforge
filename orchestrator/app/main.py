@@ -15,14 +15,13 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import __version__, keepalive
+from . import __version__
 from .config import settings
 from .graph import AGENT_KEYS
 from .store import agent_catalog, cancel_run, create_run, list_runs, snapshot
@@ -33,26 +32,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("signalforge.api")
 
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """Start the keep-alive thread on boot; nothing to tear down.
-
-    The thread is a daemon and every error inside it is swallowed, so a failure
-    here can never stop the service from serving requests.
-    """
-    try:
-        keepalive.start()
-    except Exception as exc:  # noqa: BLE001 - startup must never fail
-        log.warning("keepalive startup skipped: %s", exc)
-    yield
-
-
 app = FastAPI(
     title="SignalForge Orchestrator",
     version=__version__,
     description="LangGraph multi-agent orchestration for SignalForge experiments.",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -75,6 +58,12 @@ def require_token(authorization: str | None = Header(default=None)) -> None:
 class RunRequest(BaseModel):
     objective: str = Field(default="Full workspace sweep", max_length=200)
     dataset: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompleteRequest(BaseModel):
+    prompt: str = Field(max_length=8000)
+    system: str | None = Field(default=None, max_length=2000)
+    max_tokens: int = Field(default=900, ge=64, le=4000)
 
 
 @app.get("/")
@@ -104,7 +93,6 @@ def health() -> dict[str, Any]:
         "degraded": not settings.use_groq,
         "authRequired": bool(settings.api_token),
         "agents": len(AGENT_KEYS),
-        "keepalive": keepalive.status(),
     }
 
 
@@ -140,3 +128,15 @@ def cancel(run_id: str) -> dict[str, Any]:
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return run
+
+
+@app.post("/v1/complete", dependencies=[Depends(require_token)])
+def complete(payload: CompleteRequest) -> dict[str, Any]:
+    """Single-shot completion used by the app's AI features (recommendations,
+    variant copy). Returns ``text`` plus which provider actually answered, so the
+    caller can label heuristic output honestly instead of passing it off as AI.
+    """
+    from .llm import complete_text
+
+    text, meta = complete_text(payload.prompt, payload.system, payload.max_tokens)
+    return {"text": text, "provider": meta.get("provider"), "model": meta.get("model"), "used": meta.get("used", False)}
