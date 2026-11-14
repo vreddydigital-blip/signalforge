@@ -1,6 +1,7 @@
 <?php
 // Dashboard API. Routes: /api/index.php?route=<group.action>
 require __DIR__ . '/lib.php';
+require __DIR__ . '/orchestrator.php';
 
 header('Cache-Control: no-store');
 $route = isset($_GET['route']) ? (string) $_GET['route'] : '';
@@ -572,6 +573,43 @@ try {
                 $out[] = ['segment' => $label, 'lift' => round($lift, 1), 'signal' => $signal, 'visitors' => $visitors];
             }
             respond($out);
+            break;
+
+        // ---------- multi-agent orchestration ----------
+        case 'orchestrator.agents':
+            require_user();
+            respond(orch_agents());
+            break;
+
+        case 'orchestrator.runs':
+            $user = require_user();
+            respond(orch_runs($user['id']));
+            break;
+
+        case 'orchestrator.state':
+            $user = require_user();
+            $in = query_input();
+            respond(orch_run_state($user['id'], isset($in['id']) ? (int) $in['id'] : 0));
+            break;
+
+        case 'orchestrator.start':
+            require_post();
+            $user = require_user();
+            respond(orch_start($user, body_json()));
+            break;
+
+        case 'orchestrator.tick':
+            require_post();
+            $user = require_user();
+            $in = body_json();
+            respond(orch_tick($user, isset($in['id']) ? (int) $in['id'] : 0));
+            break;
+
+        case 'orchestrator.cancel':
+            require_post();
+            $user = require_user();
+            $in = body_json();
+            respond(orch_cancel($user, isset($in['id']) ? (int) $in['id'] : 0));
             break;
 
         default:

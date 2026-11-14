@@ -21,6 +21,7 @@ import {
   LogOut,
   Lightbulb,
   MoreHorizontal,
+  Network,
   Pause,
   Play,
   Plus,
@@ -46,6 +47,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Orchestration from "@/pages/Orchestration";
 
 type ExperimentStatus = "Active" | "Draft" | "Paused" | "Completed";
 type ExperimentKind = "A/B test" | "Multivariate";
@@ -551,6 +553,7 @@ export default function Home() {
         <nav className="nav-list">
           <button className={`nav-item ${activeNav === "Tracking setup" ? "active" : ""}`} onClick={() => setActiveNav("Tracking setup")}><Code2 size={17} /><span>Tracking setup</span><span className="nav-new">New</span></button>
           <button className={`nav-item ${activeNav === "CRO intelligence" ? "active" : ""}`} onClick={() => setActiveNav("CRO intelligence")}><Zap size={17} /><span>CRO intelligence</span></button>
+          <button className={`nav-item ${activeNav === "Agent mesh" ? "active" : ""}`} onClick={() => setActiveNav("Agent mesh")}><Network size={17} /><span>Agent mesh</span><span className="nav-new">New</span></button>
         </nav>
         <div className="sidebar-section-label second manage-label">Manage</div>
         <nav className="nav-list">
@@ -581,7 +584,7 @@ export default function Home() {
         </header>
 
         <div className="page-content">
-          {activeNav === "Tracking setup" ? <TrackingSetup notify={notify} /> : activeNav === "Insights" ? <PredictiveInsights notify={notify} /> : activeNav === "CRO intelligence" ? <IntelligenceCenter notify={notify} /> : activeNav === "CRO frameworks" ? <FrameworkLibrary notify={notify} /> : activeNav === "Workspace settings" ? <WorkspaceSettings notify={notify} /> : <>
+          {activeNav === "Tracking setup" ? <TrackingSetup notify={notify} /> : activeNav === "Insights" ? <PredictiveInsights notify={notify} /> : activeNav === "CRO intelligence" ? <IntelligenceCenter notify={notify} /> : activeNav === "Agent mesh" ? <Orchestration notify={notify} /> : activeNav === "CRO frameworks" ? <FrameworkLibrary notify={notify} /> : activeNav === "Workspace settings" ? <WorkspaceSettings notify={notify} /> : <>
           <section className="page-heading">
             <div><div className="overline"><span className="live-pulse" />Live workspace</div><h1>Experiment cockpit</h1><p>Turn visitor behavior into your next confident decision.</p></div>
             <Button className="new-experiment-button" onClick={openCreate}><Plus size={17} />Create experiment</Button>

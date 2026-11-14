@@ -83,6 +83,29 @@ $statements = [
         revenuePerConversion DECIMAL(12,2) NOT NULL DEFAULT 0,
         monthlyVisitors INT NOT NULL DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    // Multi-agent orchestration: one row per run, one row per agent task in that run.
+    "CREATE TABLE IF NOT EXISTS agent_runs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        userId INT NOT NULL,
+        objective VARCHAR(200) NOT NULL,
+        status ENUM('running','completed','failed','cancelled') NOT NULL DEFAULT 'running',
+        createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY agent_runs_user_idx (userId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    "CREATE TABLE IF NOT EXISTS agent_tasks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        runId INT NOT NULL,
+        agentKey VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        status ENUM('queued','running','done','failed') NOT NULL DEFAULT 'queued',
+        position INT NOT NULL DEFAULT 0,
+        output MEDIUMTEXT NULL,
+        error VARCHAR(500) NULL,
+        startedAt TIMESTAMP NULL DEFAULT NULL,
+        finishedAt TIMESTAMP NULL DEFAULT NULL,
+        KEY agent_tasks_run_idx (runId, position)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];
 
 try {

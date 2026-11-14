@@ -7,6 +7,7 @@ so it runs on InfinityFree's free hosting.
 client/            React dashboard (source)
 infinityfree/      PHP backend + .htaccess   -> becomes htdocs/api/*
   api/index.php      dashboard API (login, experiments, results)
+  api/orchestrator.php  multi-agent orchestration engine (5 agents, durable task queue)
   api/track.php      public tracking endpoint used by tracker.js
   api/install.php    one-time table creator (delete after use)
   api/config.php     your database details and secrets
@@ -51,6 +52,28 @@ Then **delete `api/install.php`** from htdocs.
 Open your site, create an account, create an experiment, launch it, and copy the snippet from **Tracking setup**
 into the `<head>` of the page you want to test.
 
+## Multi-agent orchestration
+
+The **Agent mesh** page runs five specialist agents in parallel over your live experiment data:
+
+| Agent | What it does |
+|---|---|
+| Signal Analyst | Scores every experiment for the probability a challenger beats control |
+| Segment Scout | Splits exposures by device, paid traffic and repeat visits to find who benefits |
+| Tracking Auditor | Checks event freshness, conversion coverage and traffic-split integrity |
+| Sample Planner | Estimates the visitors and days each active test still needs |
+| Brief Writer | Turns the weakest result into a framework-grounded brief for the next test |
+
+**How it runs on shared hosting.** InfinityFree has no background workers and no process forking, so a run is a
+durable task queue rather than a thread pool. `orchestrator.start` writes one run row plus one task row per agent;
+the dashboard then calls `orchestrator.tick`, which claims the next two queued tasks, executes them against your
+real `experiments` / `variants` / `visitor_events` rows, and saves each agent's JSON output. The board therefore
+shows several agents progressing side by side. Close the tab mid-run and the run resumes where it stopped when you
+reopen the page — nothing is lost, because every task's state is in MySQL.
+
+Every number an agent reports is computed from your own rows. An agent with no data says so instead of inventing a
+figure, and a segment with no control conversions reports "no lift to report" rather than a misleading 0%.
+
 ## Using the tracker
 - Experiments run on the page URL you entered; only experiments set to **Active** are served.
 - Each visitor is assigned a variant (stable per visitor, honours the traffic %). `<html>` gets the classes
@@ -67,6 +90,9 @@ into the `<head>` of the page you want to test.
 - InfinityFree enforces daily hit and CPU limits; a high-traffic site will exceed them.
 - Needs PHP 7.4 or newer (choose it in the control panel if offered) and MySQL with PDO (standard).
 - The Insights models, Intelligence Center panels, workspace settings and tracking-health text are still static UI.
+- The orchestration layer is real (it reads and writes MySQL), but it is not a general-purpose LLM agent runtime: the
+  five agents are deterministic analyses of your experiment data, not free-form reasoning agents. Each tick is one HTTP
+  request, so a run advances only while the Agent mesh page is open.
 
 ## Security notes
 - `account.setPlan` lets a signed-in user change their own plan. That is intentional for this demo build (the plan

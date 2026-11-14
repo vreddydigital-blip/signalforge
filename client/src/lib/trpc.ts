@@ -51,6 +51,48 @@ export type TrackedEvent = { name: string; type: string; selector: string; statu
 export type TrackingHealth = { scriptDetected: boolean; lastEventTs: number | null; lastEventAgo: string | null; eventsLast24h: number; visitorRows: number; conversions: number; mappedOutcomes: number; events: TrackedEvent[] };
 export type SegmentRow = { segment: string; lift: number; signal: string; visitors: number };
 
+export type AgentMeta = { key: string; name: string; role: string; icon: string; accent: string };
+export type AgentMetric = { label: string; value: string; agent?: string };
+export type AgentOutput = {
+  headline: string;
+  metrics: { label: string; value: string }[];
+  findings: string[];
+  recommendation: string;
+  tone: "good" | "warn" | "bad" | "info";
+};
+export type AgentTask = {
+  id: number;
+  agentKey: string;
+  agentName: string;
+  agentRole: string;
+  icon: string;
+  accent: string;
+  title: string;
+  status: "queued" | "running" | "done" | "failed";
+  durationMs: number | null;
+  output: AgentOutput | null;
+  error: string | null;
+};
+export type AgentRunSummary = {
+  agentsDone: number;
+  agentsFailed: number;
+  metrics: AgentMetric[];
+  findings: { text: string; agent: string; accent: string }[];
+  recommendations: { text: string; agent: string; tone: string }[];
+  lead: { text: string; agent: string; tone: string } | null;
+  tone: string;
+};
+export type AgentRun = {
+  id: number;
+  objective: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  createdAt: string;
+  progress: number;
+  tasks: AgentTask[];
+  summary: AgentRunSummary;
+};
+export type AgentRunListItem = { id: number; objective: string; status: string; createdAt: string; updatedAt: string };
+
 type QueryOptions = { enabled?: boolean; refetchInterval?: number; refetchOnWindowFocus?: boolean; retry?: boolean };
 type Q<T> = (input?: unknown, options?: QueryOptions) => UseQueryResult<T, ApiError>;
 type MutationOptions<T> = { onSuccess?: (data: T) => void; onError?: (error: ApiError) => void };
@@ -58,7 +100,7 @@ type M<T> = (options?: MutationOptions<T>) => UseMutationResult<T, ApiError, any
 type Utils = { invalidate(): void; remove(): void; setData(input: unknown, data: unknown): void };
 
 interface Api {
-  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils } };
+  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils }; orchestrator: { runs: Utils; state: Utils } };
   auth: {
     me: { useQuery: Q<PublicUser | null> };
     login: { useMutation: M<PublicUser> };
@@ -71,6 +113,14 @@ interface Api {
     save: { useMutation: M<WorkspaceSettings> };
   };
   tracking: { health: { useQuery: Q<TrackingHealth> } };
+  orchestrator: {
+    agents: { useQuery: Q<AgentMeta[]> };
+    runs: { useQuery: Q<AgentRunListItem[]> };
+    state: { useQuery: Q<AgentRun> };
+    start: { useMutation: M<AgentRun> };
+    tick: { useMutation: M<AgentRun> };
+    cancel: { useMutation: M<AgentRun> };
+  };
   experiments: {
     list: { useQuery: Q<any[]> };
     trend: { useQuery: Q<TrendPoint[]> };
