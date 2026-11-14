@@ -1,0 +1,37 @@
+# Render blueprint for the SignalForge orchestration service.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repository.
+# Render reads this file, creates the service, and asks for the two secrets
+# marked sync: false (GROQ_API_KEY and SIGNALFORGE_API_TOKEN).
+services:
+  - type: web
+    name: signalforge-orchestrator
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./orchestrator/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Set in the Render dashboard. Never commit a real key.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      # Shared secret the PHP backend sends as a bearer token.
+      # Generate with: openssl rand -hex 32
+      - key: SIGNALFORGE_API_TOKEN
+        sync: false
+      - key: SIGNALFORGE_LLM_MODE
+        value: auto
+      - key: SIGNALFORGE_MAX_ATTEMPTS
+        value: "3"
+      - key: SIGNALFORGE_RUN_TTL_SECONDS
+        value: "3600"
+      - key: SIGNALFORGE_CORS_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHON_VERSION
+        value: "3.12"

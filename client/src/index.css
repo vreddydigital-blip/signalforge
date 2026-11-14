@@ -740,3 +740,76 @@ h1 { margin: 8px 0 6px; font-size: 29px; letter-spacing: -.045em; color: #202738
   .orch-feed-row { flex-wrap: wrap; }
   .feed-agent { flex-basis: 100%; padding-left: 15px; }
 }
+
+/* ---- orchestration engine strip (LangGraph service status) ---- */
+.orch-engine {
+  display: flex; align-items: center; gap: 11px;
+  border: 1px solid #e8eaf0; border-radius: 10px; padding: 10px 14px;
+  background: #fff; box-shadow: 0 6px 18px rgba(35,42,57,.03);
+}
+.orch-engine-icon {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 8px; flex: 0 0 auto;
+}
+.orch-engine-copy { flex: 1; min-width: 0; }
+.orch-engine-copy strong { display: block; font-size: 10px; letter-spacing: -.01em; }
+.orch-engine-copy span { display: block; font-size: 9px; line-height: 1.45; margin-top: 2px; color: #98a1ae; }
+.orch-engine-mode {
+  flex: 0 0 auto; font-size: 8px; font-weight: 650; letter-spacing: .04em;
+  text-transform: uppercase; color: #a3abb8; background: #f5f6f9;
+  border-radius: 20px; padding: 4px 9px;
+}
+.orch-engine.engine-remote { border-color: #d9e6f7; background: linear-gradient(120deg, #f7fbff, #fff); }
+.orch-engine.engine-remote .orch-engine-icon { background: #e8f1fd; color: #4a7fc1; }
+.orch-engine.engine-remote .orch-engine-copy strong { color: #3f6ea8; }
+.orch-engine.engine-local { border-color: #e6e8ee; }
+.orch-engine.engine-local .orch-engine-icon { background: #f1f3f7; color: #7b8698; }
+.orch-engine.engine-local .orch-engine-copy strong { color: #5d6879; }
+.orch-engine.engine-down { border-color: #f2dada; background: linear-gradient(120deg, #fdf5f5, #fff); }
+.orch-engine.engine-down .orch-engine-icon { background: #fbe9e9; color: #b85454; }
+.orch-engine.engine-down .orch-engine-copy strong { color: #a94a4a; }
+.orch-engine.engine-down .orch-engine-copy span { color: #b98a8a; }
+
+/* engine tag on a run + in history */
+.orch-engine-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 20px; padding: 3px 8px; font-size: 8px; font-weight: 650;
+  white-space: nowrap;
+}
+.orch-engine-tag.tag-langgraph { color: #3f6ea8; background: #eaf2fd; }
+.orch-engine-tag.tag-local { color: #6d7788; background: #f1f3f7; }
+
+/* per-agent LLM attribution */
+.agent-llm-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: #8a6bb5; background: #f5f0fb; border-radius: 20px;
+  padding: 2px 7px; font-size: 8px; font-weight: 650; margin-bottom: 7px;
+}
+
+@media (max-width: 720px) {
+  .orch-engine { flex-wrap: wrap; }
+  .orch-engine-mode { order: 3; }
+}
+
+/* ---- readability pass on the engine strip and agent cards ---- */
+.orch-engine { padding: 13px 16px; }
+.orch-engine-copy strong { font-size: 12px; }
+.orch-engine-copy span { font-size: 11px; color: #6f7a8b; }
+.orch-engine.engine-down .orch-engine-copy span { color: #8f6a6a; }
+.orch-engine-mode { font-size: 9px; color: #7d8798; }
+.orch-engine-tag { font-size: 9px; padding: 3px 9px; }
+.agent-llm-tag { font-size: 9px; padding: 2px 8px; }
+
+/* the empty "no run yet" panel was stretching the page; keep it compact */
+.orch-empty { min-height: 0; padding: 24px; }
+.orch-empty p { font-size: 11px; color: #78828f; }
+
+/* longer measure on the footnote for comfortable reading */
+.orch-footnote { max-width: 860px; }
+.orch-footnote span { font-size: 11px; line-height: 1.65; color: #6f7887; }
+
+/* ---- contrast pass: the objective chips and feed labels were too faint ---- */
+.orch-objective-chips button { color: #d3dae5; font-size: 10px; border-color: rgba(255,255,255,.2); }
+.orch-objective-chips button.selected { color: #ffd9cb; }
+.orch-feed-row p { font-size: 10px; color: #5d6678; }
+.feed-agent { color: #8b94a3; font-size: 9px; }

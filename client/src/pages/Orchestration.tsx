@@ -5,6 +5,9 @@ import {
   Check,
   CircleHelp,
   Clock3,
+  Cloud,
+  CloudOff,
+  Cpu,
   Gauge,
   Layers3,
   Loader2,
@@ -18,7 +21,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { trpc, type AgentRun, type AgentTask } from "@/lib/trpc";
+import { trpc, type AgentRun, type AgentTask, type OrchestratorEngine } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +54,41 @@ function duration(ms: number | null) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+/**
+ * Engine strip: says which engine will run and whether the LangGraph service is up.
+ * This is the honest surface for the "service unreachable" case — the user sees it
+ * before starting a run, not as a surprise failure afterwards.
+ */
+function EngineStrip({ engine }: { engine: OrchestratorEngine | undefined }) {
+  if (!engine) return null;
+  const isLangGraph = engine.active === "langgraph";
+  const isDown = engine.active === "unavailable";
+  const Icon = isDown ? CloudOff : isLangGraph ? Cloud : Cpu;
+  const label = isDown
+    ? "Orchestration service unreachable"
+    : isLangGraph
+      ? "LangGraph service"
+      : "Built-in engine";
+  const detail = isDown
+    ? engine.error ?? "The service did not answer its health check."
+    : isLangGraph
+      ? `${engine.provider === "groq" ? "Groq" : "Deterministic"}${engine.model ? ` · ${engine.model}` : ""}${engine.degraded ? " · no API key, narrative is deterministic" : ""}`
+      : engine.mode === "local"
+        ? "Running in PHP on this host (orchestrator_mode = local)."
+        : "The service is not configured, so runs use the PHP engine.";
+
+  return (
+    <div className={`orch-engine ${isDown ? "engine-down" : isLangGraph ? "engine-remote" : "engine-local"}`}>
+      <span className="orch-engine-icon"><Icon size={14} /></span>
+      <div className="orch-engine-copy">
+        <strong>{label}</strong>
+        <span>{detail}</span>
+      </div>
+      <span className="orch-engine-mode">mode: {engine.mode}</span>
+    </div>
+  );
+}
+
 function AgentCard({ task, index }: { task: AgentTask; index: number }) {
   const Icon = ICONS[task.icon] ?? Activity;
   const output = task.output;
@@ -75,6 +113,10 @@ function AgentCard({ task, index }: { task: AgentTask; index: number }) {
       </div>
 
       <p className="agent-task-title">{task.title}</p>
+
+      {task.status === "done" && task.llmUsed && (
+        <span className="agent-llm-tag"><Sparkles size={9} />Groq narrative</span>
+      )}
 
       {task.status === "running" && (
         <div className="agent-working">
@@ -129,6 +171,7 @@ function AgentCard({ task, index }: { task: AgentTask; index: number }) {
 export default function Orchestration({ notify }: { notify: (message: string) => void }) {
   const utils = trpc.useUtils();
   const agentsQuery = trpc.orchestrator.agents.useQuery();
+  const engineQuery = trpc.orchestrator.engine.useQuery(undefined, { refetchInterval: 60000 });
   const runsQuery = trpc.orchestrator.runs.useQuery();
   const startMutation = trpc.orchestrator.start.useMutation();
   const tickMutation = trpc.orchestrator.tick.useMutation();
@@ -246,6 +289,8 @@ export default function Orchestration({ notify }: { notify: (message: string) =>
         </div>
       </section>
 
+      <EngineStrip engine={engineQuery.data} />
+
       <section className="orch-launcher">
         <div className="orch-launcher-copy">
           <div className="card-kicker"><Network size={14} />OBJECTIVE</div>
@@ -286,6 +331,12 @@ export default function Orchestration({ notify }: { notify: (message: string) =>
             <span className="orch-run-counts">
               {doneCount}/{tasks.length} agents · {runningCount} working · {queuedCount} queued
             </span>
+            {run.engine && (
+              <span className={`orch-engine-tag tag-${run.engine}`}>
+                {run.engine === "langgraph" ? <Cloud size={10} /> : <Cpu size={10} />}
+                {run.engine === "langgraph" ? "LangGraph" : "PHP engine"}
+              </span>
+            )}
           </div>
           <div className="orch-progress">
             <div className="orch-progress-track">
@@ -436,7 +487,7 @@ export default function Orchestration({ notify }: { notify: (message: string) =>
                   <span className={`history-status status-${item.status}`} />
                   <div>
                     <strong>{item.objective}</strong>
-                    <small>Run #{item.id} · {item.status}</small>
+                    <small>Run #{item.id} · {item.status}{item.engine ? ` · ${item.engine === "langgraph" ? "LangGraph" : "PHP"}` : ""}</small>
                   </div>
                   <ArrowUpRight size={13} />
                 </button>
@@ -449,8 +500,9 @@ export default function Orchestration({ notify }: { notify: (message: string) =>
       <section className="orch-footnote">
         <CircleHelp size={15} />
         <span>
-          Shared PHP hosting has no background workers, so the queue is advanced by the dashboard: each poll executes the next
-          batch of agents and saves their output. Close the tab mid-run and the run resumes where it stopped when you reopen it.
+          Runs execute on the LangGraph service when it is reachable: five agents fan out in parallel, each with its own retry
+          policy, and the merged verdict is written back here. If the service is asleep or down, the strip above says so and
+          the run either falls back to the built-in PHP engine (mode: auto) or fails with a clear message (mode: remote).
         </span>
       </section>
     </div>

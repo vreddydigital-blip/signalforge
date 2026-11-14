@@ -773,6 +773,7 @@ function orch_run_state($userId, $runId)
         'objective' => $run['objective'],
         'status'    => $run['status'],
         'createdAt' => $run['createdAt'],
+        'engine'    => isset($run['engine']) ? (string) $run['engine'] : 'local',
         'progress'  => $total > 0 ? (int) round(($finished / $total) * 100) : 0,
         'tasks'     => $tasks,
         'summary'   => orch_summary($tasks),
@@ -790,6 +791,7 @@ function orch_runs($userId)
             'id'        => (int) $row['id'],
             'objective' => $row['objective'],
             'status'    => $row['status'],
+            'engine'    => isset($row['engine']) ? (string) $row['engine'] : 'local',
             'createdAt' => $row['createdAt'],
             'updatedAt' => $row['updatedAt'],
         ];
@@ -813,9 +815,28 @@ function orch_start($user, $input)
         fail('A run is already in progress. Wait for it to finish or cancel it.', 'CONFLICT', 409);
     }
 
+    // Prefer the LangGraph service when it is configured and reachable.
+    $mode = orch_remote_mode();
+    if ($mode !== 'local' && orch_remote_configured()) {
+        list($state, $error) = orch_remote_start($user, $objective);
+        if ($state !== null) {
+            return $state;
+        }
+        if ($mode === 'remote') {
+            fail(
+                'The orchestration service is unreachable: ' . $error
+                . '. Check that the Render service is awake and that orchestrator_url in api/config.php is correct.',
+                'ORCHESTRATOR_UNAVAILABLE',
+                503
+            );
+        }
+        // mode 'auto': fall through to the local engine and note why.
+        error_log('[signalforge:orchestrator] remote unavailable, using local engine: ' . $error);
+    }
+
     $pdo->beginTransaction();
     try {
-        $pdo->prepare("INSERT INTO agent_runs (userId, objective, status) VALUES (?, ?, 'running')")
+        $pdo->prepare("INSERT INTO agent_runs (userId, objective, status, engine) VALUES (?, ?, 'running', 'local')")
             ->execute([(int) $user['id'], $objective]);
         $runId = (int) $pdo->lastInsertId();
         $ins = $pdo->prepare("INSERT INTO agent_tasks (runId, agentKey, title, status, position) VALUES (?, ?, ?, 'queued', ?)");
@@ -848,6 +869,10 @@ function orch_tick($user, $runId)
     $run = $st->fetch();
     if (!$run) {
         fail('Run not found.', 'NOT_FOUND', 404);
+    }
+    // A run started on the LangGraph service is advanced by polling that service.
+    if (isset($run['engine']) && $run['engine'] === 'langgraph') {
+        return orch_remote_sync($user, $runId);
     }
     if ($run['status'] !== 'running') {
         return orch_run_state($user['id'], $runId);
@@ -898,6 +923,9 @@ function orch_cancel($user, $runId)
     $run = $st->fetch();
     if (!$run) {
         fail('Run not found.', 'NOT_FOUND', 404);
+    }
+    if (isset($run['engine']) && $run['engine'] === 'langgraph') {
+        return orch_remote_cancel($user, $runId);
     }
     if ($run['status'] === 'running') {
         $pdo->prepare("UPDATE agent_tasks SET status = 'failed', error = 'Cancelled by user', finishedAt = CURRENT_TIMESTAMP WHERE runId = ? AND status IN ('queued','running')")

@@ -89,6 +89,8 @@ $statements = [
         userId INT NOT NULL,
         objective VARCHAR(200) NOT NULL,
         status ENUM('running','completed','failed','cancelled') NOT NULL DEFAULT 'running',
+        engine VARCHAR(16) NOT NULL DEFAULT 'local',
+        remoteId VARCHAR(64) NULL,
         createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         KEY agent_runs_user_idx (userId)
@@ -119,6 +121,16 @@ try {
             db()->exec("ALTER TABLE visitor_events ADD COLUMN $col $def");
         }
     }
+
+    // Orchestration engine columns (added when upgrading from the local-only engine).
+    $runCols = db()->query("SHOW COLUMNS FROM agent_runs")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('engine', $runCols, true)) {
+        db()->exec("ALTER TABLE agent_runs ADD COLUMN engine VARCHAR(16) NOT NULL DEFAULT 'local' AFTER status");
+    }
+    if (!in_array('remoteId', $runCols, true)) {
+        db()->exec("ALTER TABLE agent_runs ADD COLUMN remoteId VARCHAR(64) NULL AFTER engine");
+    }
+
     echo "OK - tables are ready.\nNow DELETE api/install.php from your hosting.\n";
 } catch (Throwable $e) {
     http_response_code(500);

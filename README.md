@@ -7,10 +7,18 @@ so it runs on InfinityFree's free hosting.
 client/            React dashboard (source)
 infinityfree/      PHP backend + .htaccess   -> becomes htdocs/api/*
   api/index.php      dashboard API (login, experiments, results)
-  api/orchestrator.php  multi-agent orchestration engine (5 agents, durable task queue)
+  api/orchestrator.php  orchestration engine: local PHP engine + engine selection
+  api/remote.php     client for the LangGraph service on Render
   api/track.php      public tracking endpoint used by tracker.js
   api/install.php    one-time table creator (delete after use)
   api/config.php     your database details and secrets
+orchestrator/      LangGraph + Groq multi-agent service (deploys to Render)
+  app/graph.py       the five-agent graph (parallel fan-out, retries, trace)
+  app/analysis.py    deterministic figures computed from your data
+  app/llm.py         Groq narrative with hallucinated-number guardrails
+  app/main.py        FastAPI HTTP API
+  Dockerfile         container image for Render
+render.yaml        Render blueprint (service + env vars)
 client/public/tracker.js   the snippet script customers add to their site
 server/, drizzle/, Dockerfile   old Node backend - NOT used on InfinityFree, safe to ignore/delete
 ```
@@ -64,12 +72,35 @@ The **Agent mesh** page runs five specialist agents in parallel over your live e
 | Sample Planner | Estimates the visitors and days each active test still needs |
 | Brief Writer | Turns the weakest result into a framework-grounded brief for the next test |
 
-**How it runs on shared hosting.** InfinityFree has no background workers and no process forking, so a run is a
-durable task queue rather than a thread pool. `orchestrator.start` writes one run row plus one task row per agent;
-the dashboard then calls `orchestrator.tick`, which claims the next two queued tasks, executes them against your
-real `experiments` / `variants` / `visitor_events` rows, and saves each agent's JSON output. The board therefore
+**Two engines, one dashboard.** The Agent mesh page can run on either:
+
+1. **LangGraph service (recommended)** — a Python service in `orchestrator/` that deploys to Render. Five agents fan
+   out from `START` in the same LangGraph superstep, so they genuinely run in parallel; each node has its own
+   `RetryPolicy`; every node appends to a shared run trace. Groq writes the narrative around figures that were
+   already computed in Python. See **[docs/RENDER-DEPLOY.md](docs/RENDER-DEPLOY.md)**.
+2. **Built-in PHP engine** — the original durable task queue, advanced by the dashboard. No extra hosting, no API key.
+
+Which one runs is set by `orchestrator_mode` in `api/config.php`:
+
+| Mode | Behaviour |
+|---|---|
+| `remote` | Always call the service. If it is unreachable the run fails with a clear message naming the cause. |
+| `local` | Always use the PHP engine. |
+| `auto` (default) | Try the service; fall back to the PHP engine when it is down, and log why. |
+
+The Agent mesh page shows an **engine strip** at the top saying which engine will run and whether the service is
+reachable, so an outage is visible before you start a run rather than as a surprise failure.
+
+**How the PHP engine runs on shared hosting.** InfinityFree has no background workers and no process forking, so a
+run is a durable task queue rather than a thread pool. `orchestrator.start` writes one run row plus one task row per
+agent; the dashboard then calls `orchestrator.tick`, which claims the next two queued tasks, executes them against
+your real `experiments` / `variants` / `visitor_events` rows, and saves each agent's JSON output. The board therefore
 shows several agents progressing side by side. Close the tab mid-run and the run resumes where it stopped when you
 reopen the page — nothing is lost, because every task's state is in MySQL.
+
+**A run started on the service is mirrored into MySQL.** `agent_runs.engine` records which engine produced it and
+`agent_runs.remoteId` holds the service's run id, so the dashboard reads the same shape either way and a service
+restart mid-run is recorded as a failed run with the reason, not a run that spins forever.
 
 Every number an agent reports is computed from your own rows. An agent with no data says so instead of inventing a
 figure, and a segment with no control conversions reports "no lift to report" rather than a misleading 0%.
@@ -90,9 +121,10 @@ figure, and a segment with no control conversions reports "no lift to report" ra
 - InfinityFree enforces daily hit and CPU limits; a high-traffic site will exceed them.
 - Needs PHP 7.4 or newer (choose it in the control panel if offered) and MySQL with PDO (standard).
 - The Insights models, Intelligence Center panels, workspace settings and tracking-health text are still static UI.
-- The orchestration layer is real (it reads and writes MySQL), but it is not a general-purpose LLM agent runtime: the
-  five agents are deterministic analyses of your experiment data, not free-form reasoning agents. Each tick is one HTTP
-  request, so a run advances only while the Agent mesh page is open.
+- The orchestration layer is real (it reads and writes MySQL), but the PHP engine is not a general-purpose LLM agent
+  runtime: its five agents are deterministic analyses of your experiment data, not free-form reasoning agents. Each
+  tick is one HTTP request, so a PHP-engine run advances only while the Agent mesh page is open. The LangGraph service
+  removes both limits — it runs the agents in parallel on its own host and calls Groq for the narrative.
 
 ## Security notes
 - `account.setPlan` lets a signed-in user change their own plan. That is intentional for this demo build (the plan

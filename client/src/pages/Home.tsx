@@ -495,15 +495,22 @@ export default function Home() {
     return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "#8a91a2" }}>Loading experiments…</div>;
   }
 
-  if (!selectedExperiment) {
+  // Only the two tabs that render experiment data are replaced by the first-run
+  // screen. Every other tab (Agent mesh, Tracking setup, ...) must stay reachable
+  // before the first experiment exists, otherwise a new workspace is a dead end.
+  if (!selectedExperiment && (activeNav === "Overview" || activeNav === "Experiments")) {
     return (
       <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}>
-        <div style={{ maxWidth: 420 }}>
+        <div style={{ maxWidth: 460 }}>
           <div className="brand-mark" style={{ margin: "0 auto 16px" }}><FlaskConical size={20} strokeWidth={2.5} /></div>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Create your first experiment</h1>
           <p style={{ color: "#6b7385", marginBottom: 20 }}>Set up a hypothesis, add variants and install the tracking snippet. Results will appear here as visitors arrive.</p>
           <Button onClick={openCreate}><Plus size={16} />Create experiment</Button>
-          <div style={{ marginTop: 12 }}><Button variant="ghost" onClick={() => logout()}>Sign out</Button></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
+            <Button variant="ghost" onClick={() => setActiveNav("Agent mesh")}><Network size={15} />Agent mesh</Button>
+            <Button variant="ghost" onClick={() => setActiveNav("Tracking setup")}><Code2 size={15} />Tracking setup</Button>
+            <Button variant="ghost" onClick={() => logout()}>Sign out</Button>
+          </div>
         </div>
         {toast && <div className="toast"><Check size={15} />{toast}</div>}
         {isCreateOpen && <CreateExperimentModal plan={plan} limit={currentLimit} onClose={() => setCreateOpen(false)} onCreated={handleCreated} onUpgrade={() => { setCreateOpen(false); changePlan("Scale"); notify("Scale plan enabled."); }} />}
@@ -518,7 +525,9 @@ export default function Home() {
   const decisionConfidence = activeExperiments.length > 0
     ? `${(activeExperiments.reduce((sum, item) => sum + Math.max(50, ...item.variants.filter(variant => !variant.isControl).map(variant => variant.probability)), 0) / activeExperiments.length).toFixed(1)}%`
     : "—";
-  const leadVariant = selectedExperiment.variants.filter(variant => !variant.isControl).sort((a, b) => b.probability - a.probability)[0];
+  // selectedExperiment is undefined when the workspace has no experiments yet, and
+  // tabs like Agent mesh still render in that state — so every read below is optional.
+  const leadVariant = selectedExperiment?.variants.filter(variant => !variant.isControl).sort((a, b) => b.probability - a.probability)[0];
   const leadUplift = leadVariant ? `${leadVariant.uplift >= 0 ? "+" : ""}${leadVariant.uplift}%` : "—";
   const leadProbability = leadVariant ? leadVariant.probability : 50;
 

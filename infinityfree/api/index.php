@@ -2,6 +2,7 @@
 // Dashboard API. Routes: /api/index.php?route=<group.action>
 require __DIR__ . '/lib.php';
 require __DIR__ . '/orchestrator.php';
+require __DIR__ . '/remote.php';
 
 header('Cache-Control: no-store');
 $route = isset($_GET['route']) ? (string) $_GET['route'] : '';
@@ -579,6 +580,24 @@ try {
         case 'orchestrator.agents':
             require_user();
             respond(orch_agents());
+            break;
+
+        // Engine status: which engine will run, and whether the service is up.
+        case 'orchestrator.engine':
+            require_user();
+            $mode = orch_remote_mode();
+            $configured = orch_remote_configured();
+            $health = $configured ? orch_remote_health() : ['reachable' => false, 'degraded' => true, 'provider' => null, 'error' => 'Not configured'];
+            respond([
+                'mode'       => $mode,
+                'configured' => $configured,
+                'reachable'  => (bool) $health['reachable'],
+                'degraded'   => (bool) $health['degraded'],
+                'provider'   => $health['provider'],
+                'model'      => isset($health['model']) ? $health['model'] : null,
+                'error'      => $health['error'],
+                'active'     => $mode === 'local' ? 'local' : ($health['reachable'] ? 'langgraph' : ($mode === 'remote' ? 'unavailable' : 'local')),
+            ]);
             break;
 
         case 'orchestrator.runs':

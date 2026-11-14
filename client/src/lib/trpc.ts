@@ -72,6 +72,8 @@ export type AgentTask = {
   durationMs: number | null;
   output: AgentOutput | null;
   error: string | null;
+  /** True when the LangGraph service wrote this agent's narrative with Groq. */
+  llmUsed?: boolean;
 };
 export type AgentRunSummary = {
   agentsDone: number;
@@ -87,11 +89,24 @@ export type AgentRun = {
   objective: string;
   status: "running" | "completed" | "failed" | "cancelled";
   createdAt: string;
+  engine?: "local" | "langgraph";
   progress: number;
   tasks: AgentTask[];
   summary: AgentRunSummary;
 };
-export type AgentRunListItem = { id: number; objective: string; status: string; createdAt: string; updatedAt: string };
+export type AgentRunListItem = { id: number; objective: string; status: string; engine?: string; createdAt: string; updatedAt: string };
+
+/** Which engine will run, and whether the LangGraph service is reachable. */
+export type OrchestratorEngine = {
+  mode: "remote" | "local" | "auto";
+  configured: boolean;
+  reachable: boolean;
+  degraded: boolean;
+  provider: string | null;
+  model: string | null;
+  error: string | null;
+  active: "langgraph" | "local" | "unavailable";
+};
 
 type QueryOptions = { enabled?: boolean; refetchInterval?: number; refetchOnWindowFocus?: boolean; retry?: boolean };
 type Q<T> = (input?: unknown, options?: QueryOptions) => UseQueryResult<T, ApiError>;
@@ -100,7 +115,7 @@ type M<T> = (options?: MutationOptions<T>) => UseMutationResult<T, ApiError, any
 type Utils = { invalidate(): void; remove(): void; setData(input: unknown, data: unknown): void };
 
 interface Api {
-  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils }; orchestrator: { runs: Utils; state: Utils } };
+  useUtils(): { auth: { me: Utils }; experiments: { list: Utils; trend: Utils; segments: Utils }; settings: { get: Utils }; tracking: { health: Utils }; orchestrator: { runs: Utils; state: Utils; engine: Utils } };
   auth: {
     me: { useQuery: Q<PublicUser | null> };
     login: { useMutation: M<PublicUser> };
@@ -115,6 +130,7 @@ interface Api {
   tracking: { health: { useQuery: Q<TrackingHealth> } };
   orchestrator: {
     agents: { useQuery: Q<AgentMeta[]> };
+    engine: { useQuery: Q<OrchestratorEngine> };
     runs: { useQuery: Q<AgentRunListItem[]> };
     state: { useQuery: Q<AgentRun> };
     start: { useMutation: M<AgentRun> };

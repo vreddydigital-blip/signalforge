@@ -12,4 +12,21 @@ return [
 
     // Needed once to open install.php (creates the tables). Delete install.php afterwards.
     'install_key' => 'CHANGE-ME-install-key',
+
+    // ---- Multi-agent orchestration (LangGraph service on Render) ----
+    // The service URL Render gives you, e.g. https://signalforge-orchestrator.onrender.com
+    // Leave empty to use the built-in PHP engine only.
+    'orchestrator_url'   => '',
+
+    // The SIGNALFORGE_API_TOKEN you set on Render. Must match exactly.
+    'orchestrator_token' => '',
+
+    // 'remote'  = always use the LangGraph service (clear error if it is down)
+    // 'local'   = always use the built-in PHP engine
+    // 'auto'    = try the service, fall back to PHP when it is unreachable
+    'orchestrator_mode'  => 'auto',
+
+    // Seconds to wait for the service. Render's free tier can take ~50s to wake,
+    // so keep this generous; the dashboard retries on the next poll.
+    'orchestrator_timeout' => 25,
 ];
