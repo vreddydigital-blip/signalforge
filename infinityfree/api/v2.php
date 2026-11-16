@@ -3,6 +3,8 @@
 // crawler, visual analysis, competitors, ecommerce, security, ops.
 // Loaded by index.php; every route here is namespaced v2.* so the v1 API is untouched.
 
+require_once __DIR__ . '/analysis2.php';
+
 // ---------------------------------------------------------------- helpers
 
 function v2_owned_experiment($userId, $id)
@@ -932,6 +934,21 @@ function v2_handle($route, $method, $user)
             break;
         case 'v2.experiments.winner':
             respond(v2_winner($user, v2_int($in, 'id')));
+            break;
+
+        // ---- analysis engine (runs in PHP, no external ML runtime) ----
+        case 'v2.analysis.models':
+            respond(a2_models($user['id']));
+            break;
+        case 'v2.analysis.run':
+            require_post();
+            $model = v2_str($in, 'model', 32);
+            if ($model === '') { fail('Choose a model to run.'); }
+            respond(a2_run($user['id'], $model, v2_int($in, 'experimentId')));
+            break;
+        case 'v2.analysis.sample':
+            require_post();
+            respond(a2_seed_sample($user['id']));
             break;
         case 'v2.experiments.templates':
             $rows = db()->query('SELECT tkey, name, category, description, payload FROM experiment_templates ORDER BY category, name')->fetchAll();

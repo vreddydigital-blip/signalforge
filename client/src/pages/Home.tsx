@@ -264,46 +264,66 @@ function TrackingSetup({ notify }: { notify: (message: string) => void }) {
 }
 
 function PredictiveInsights({ notify }: { notify: (message: string) => void }) {
-  const [ranModel, setRanModel] = useState("");
-  const [resultText, setResultText] = useState("");
-  const experimentsQuery = trpc.experiments.list.useQuery();
-  const healthQuery = trpc.tracking.health.useQuery();
-  const experiments = (experimentsQuery.data ?? []) as Experiment[];
-  const visitorRows = healthQuery.data?.visitorRows ?? 0;
-  const mappedOutcomes = healthQuery.data?.mappedOutcomes ?? 0;
-  const hasData = visitorRows > 0;
-  const readyCount = hasData ? 1 : 0;
-  const models = [
-    { id: "logistic", name: "Logistic regression", family: "Conversion prediction", description: "Predict visitor-level conversion probability from device, source, audience, and experiment assignment.", requirement: "Visitor-level rows + ML compute", color: "blue" },
-    { id: "causal", name: "Causal forests", family: "Treatment effects", description: "Estimate how the effect of each variant changes across audience segments without assuming one average lift.", requirement: "Visitor-level rows + ML compute", color: "purple" },
-    { id: "uplift", name: "Uplift modeling", family: "Who benefits", description: "Find the visitors most likely to convert because of a variant, not simply visitors who convert anyway.", requirement: "Treatment + outcome labels", color: "orange" },
-    { id: "boosting", name: "Gradient boosting", family: "Conversion prediction", description: "Capture nonlinear interactions across traffic source, device, page behavior, and experiment exposure.", requirement: "10k+ labeled visitors + ML compute", color: "green" },
-    { id: "survival", name: "Survival analysis", family: "Time to conversion", description: "Model how long visitors take to convert and identify whether a variant accelerates the funnel.", requirement: "Timestamped events + ML compute", color: "slate" },
-    { id: "sequential", name: "Sequential Bayesian testing", family: "Continuous monitoring", description: "Update the probability to win as data arrives while controlling the risk of stopping on an early random swing.", requirement: "Aggregate counts", color: "coral" },
-  ];
+  const [running, setRunning] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const [seeding, setSeeding] = useState(false);
+  const modelsQuery = trpc.v2.analysis.models.useQuery();
+  const runMutation = trpc.v2.analysis.run.useMutation();
+  const sampleMutation = trpc.v2.analysis.sample.useMutation();
+  const utils = trpc.useUtils();
 
-  const runModel = (model: typeof models[number]) => {
-    if (model.id !== "sequential") {
-      notify(`${model.name} needs an ML runtime that free hosting does not provide. Your ${formatNumber(visitorRows)} visitor rows are ready to export for external analysis.`);
-      return;
+  const catalog = modelsQuery.data;
+  const models: any[] = catalog?.models ?? [];
+  const visitors = catalog?.visitors ?? 0;
+  const readyCount = catalog?.readyCount ?? 0;
+  const hasData = visitors > 0;
+  const experimentName = catalog?.experiment?.name ?? "";
+
+  const runModel = async (model: any) => {
+    setRunning(model.key);
+    setResult(null);
+    try {
+      const data = await runMutation.mutateAsync({ model: model.key, experimentId: catalog?.experiment?.id ?? 0 });
+      setResult(data);
+      notify(data.ran ? `${model.name} finished on ${formatNumber(data.visitors ?? 0)} visitors.` : data.headline);
+    } catch (error: any) {
+      notify(error?.message ?? "The analysis request failed. Try again.");
+    } finally {
+      setRunning("");
     }
-    const withData = experiments.filter(item => item.variants.some(variant => variant.visitors > 0));
-    const target = withData.sort((a, b) => b.variants.reduce((s, v) => s + v.visitors, 0) - a.variants.reduce((s, v) => s + v.visitors, 0))[0];
-    if (!target) { notify("No visitor data yet. Install the snippet and let visitors arrive first."); return; }
-    const leader = target.variants.filter(variant => !variant.isControl).sort((a, b) => b.probability - a.probability)[0];
-    const visitors = target.variants.reduce((sum, variant) => sum + variant.visitors, 0);
-    const maturity = Math.min(100, Math.round((visitors / 10000) * 100));
-    setRanModel(model.id);
-    setResultText(`${target.name}: ${leader?.probability ?? 50}% probability to beat control across ${formatNumber(visitors)} visitors. ${maturity < 35 ? `Continue monitoring until maturity reaches 35% (now ${maturity}%).` : "Maturity is sufficient to consider a decision."}`);
-    notify("Sequential Bayesian analysis computed from your live data.");
   };
 
+  const loadSample = async () => {
+    setSeeding(true);
+    try {
+      const data = await sampleMutation.mutateAsync({});
+      await utils.v2.analysis.models.invalidate();
+      await utils.experiments.list.invalidate();
+      notify(data.created ? "Sample experiment created with 2,000 visitors. Run any model now." : "Sample experiment already exists.");
+    } catch (error: any) {
+      notify(error?.message ?? "Could not create the sample data.");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const toneClass = result?.tone === "good" ? "positive-value" : result?.tone === "bad" ? "negative-value" : "";
+
   return <div className="insights-page">
-    <section className="page-heading"><div><div className="overline"><span className="live-pulse" />Decision science</div><h1>Predictive insights</h1><p>Choose the right model for the question you are trying to answer.</p></div><Button onClick={() => notify(`${experiments.length} experiments · ${formatNumber(visitorRows)} visitor rows · ${mappedOutcomes} mapped outcomes. Sequential Bayesian is the model this host can run.`)}><Zap size={16} />Run analysis queue</Button></section>
-    <section className="model-readiness"><div className="readiness-score"><div className="readiness-score-ring"><strong>{readyCount}/6</strong><span>models ready</span></div><div><div className="card-kicker"><Gauge size={14} />DATA READINESS</div><h3>{hasData ? "Visitor events are flowing" : "Connect visitor events to unlock prediction"}</h3><p>{hasData ? "Your live counts support sequential Bayesian testing now. The heavier models need an ML runtime that free hosting does not provide." : "Your current experiment counts can support sequential Bayesian testing once visitors arrive. Install the snippet from Tracking setup."}</p><button onClick={() => notify("Open Tracking setup from the sidebar to install the event snippet and map outcomes.")}>Configure event data <ArrowUpRight size={13} /></button></div></div><div className="readiness-metrics"><div><span>Experiments</span><strong>{experiments.length}</strong></div><div><span>Visitor-level rows</span><strong className={hasData ? "" : "warning-value"}>{formatNumber(visitorRows)}</strong></div><div><span>Mapped outcomes</span><strong className={mappedOutcomes > 0 ? "" : "warning-value"}>{mappedOutcomes}</strong></div></div></section>
+    <section className="page-heading"><div><div className="overline"><span className="live-pulse" />Decision science</div><h1>Predictive insights</h1><p>Every model below runs on this server against your real visitor rows. No external ML runtime needed.</p></div><Button onClick={loadSample} disabled={seeding}><Zap size={16} />{seeding ? "Creating\u2026" : "Load sample data"}</Button></section>
+
+    <section className="model-readiness"><div className="readiness-score"><div className="readiness-score-ring"><strong>{readyCount}/6</strong><span>models ready</span></div><div><div className="card-kicker"><Gauge size={14} />DATA READINESS</div><h3>{hasData ? `Analysing ${experimentName}` : "Connect visitor events to unlock prediction"}</h3><p>{hasData ? `${formatNumber(visitors)} visitor rows are available. ${readyCount} of 6 models have enough data to run right now.` : "Install the snippet from Tracking setup, or load sample data to see every model work immediately."}</p><button onClick={loadSample} disabled={seeding}>{seeding ? "Creating sample\u2026" : "Load sample data"} <ArrowUpRight size={13} /></button></div></div><div className="readiness-metrics"><div><span>Visitors</span><strong className={hasData ? "" : "warning-value"}>{formatNumber(visitors)}</strong></div><div><span>Conversions</span><strong>{formatNumber(catalog?.conversions ?? 0)}</strong></div><div><span>Models ready</span><strong className={readyCount > 0 ? "" : "warning-value"}>{readyCount}/6</strong></div></div></section>
+
     <div className="section-heading-inline"><div><div className="card-kicker"><Activity size={14} />MODEL CATALOG</div><h2>Choose a prediction technique</h2></div><span className="catalog-note">Models never replace the underlying experiment readout.</span></div>
-    <section className="model-grid">{models.map(model => { const isSequential = model.id === "sequential"; const ready = isSequential && hasData; const status = isSequential ? (hasData ? "Ready to run" : "Needs event data") : (hasData ? "Needs ML compute" : "Needs event data"); return <Card className={`model-card model-${model.color}`} key={model.id}><CardContent><div className="model-card-top"><span className="model-type">{model.family}</span><span className={`model-status ${ready ? "ready" : "locked"}`}>{ready ? <Check size={12} /> : <Clock3 size={12} />}{status}</span></div><h3>{model.name}</h3><p>{model.description}</p><div className="model-requirement"><span>Requires</span><strong>{model.requirement}</strong></div><Button variant={ready ? "default" : "outline"} onClick={() => runModel(model)}>{isSequential ? "Run on current data" : "View data requirements"}{isSequential ? <ArrowUpRight size={13} /> : <CircleHelp size={13} />}</Button>{ranModel === model.id && resultText && <div className="model-result"><Check size={13} /><span>{resultText}</span></div>}</CardContent></Card>; })}</section>
-    <section className="model-method-note"><div className="model-method-icon"><Lightbulb size={17} /></div><div><strong>How SignalForge uses these models</strong><p>Start with transparent Bayesian estimates computed from your live counts. Heavier predictive models need an external ML runtime; keep the experiment's causal comparison as the source of truth.</p></div><button onClick={() => notify("Methodology: Bayesian posteriors use a Beta(1,1) prior; probability to beat control comes from the posterior difference.")}>Read methodology <ArrowUpRight size={13} /></button></section>
+    <section className="model-grid">{models.map((model: any) => <Card className={`model-card model-${model.key === "sequential" ? "coral" : model.key === "logistic" ? "blue" : model.key === "causal" ? "purple" : model.key === "uplift" ? "orange" : model.key === "boosting" ? "green" : "slate"}`} key={model.key}><CardContent><div className="model-card-top"><span className="model-type">{model.family}</span><span className={`model-status ${model.ready ? "ready" : "locked"}`}>{model.ready ? <Check size={12} /> : <Clock3 size={12} />}{model.status}</span></div><h3>{model.name}</h3><p>{model.why}</p><div className="model-requirement"><span>Requires</span><strong>{model.requirement}</strong></div><Button variant={model.ready ? "default" : "outline"} disabled={running === model.key} onClick={() => runModel(model)}>{running === model.key ? "Running\u2026" : model.ready ? "Run on current data" : "Run anyway"}{running === model.key ? <Clock3 size={13} /> : <ArrowUpRight size={13} />}</Button></CardContent></Card>)}</section>
+
+    {result && <section className="model-result-panel"><Card><CardHeader><div className="card-kicker"><Target size={14} />ANALYSIS RESULT</div><CardTitle className={toneClass}>{result.headline}</CardTitle><p className="card-subtitle">{result.experiment?.name ? `${result.experiment.name} \u00b7 ` : ""}{result.ran ? `${formatNumber(result.visitors ?? 0)} visitors analysed` : "Not enough data yet"}</p></CardHeader><CardContent>
+      {Array.isArray(result.metrics) && result.metrics.length > 0 && <div className="bayesian-score-grid">{result.metrics.map((m: any) => <div key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</div>}
+      {Array.isArray(result.findings) && result.findings.length > 0 && <ul className="analysis-findings">{result.findings.map((f: string, i: number) => <li key={i}>{f}</li>)}</ul>}
+      {result.recommendation && <div className="readout-callout"><div className="callout-icon"><Lightbulb size={18} /></div><div><strong>Recommendation</strong><p>{result.recommendation}</p></div></div>}
+    </CardContent></Card></section>}
+
+    <section className="model-method-note"><div className="model-method-icon"><Lightbulb size={17} /></div><div><strong>How SignalForge runs these models</strong><p>Logistic regression, causal segment effects, two-model uplift, boosted stumps and survival timing are all computed in PHP on this host from your exposure and conversion rows. Sequential Bayesian testing uses Beta posteriors with a Beta(1,1) prior.</p></div><button onClick={() => notify("Methodology: Beta(1,1) priors for Bayesian probability; batch gradient descent for logistic regression; rank-based AUC; two-model uplift for treatment effects.")}>Read methodology <ArrowUpRight size={13} /></button></section>
   </div>;
 }
 
