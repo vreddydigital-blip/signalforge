@@ -4,6 +4,7 @@
 // Loaded by index.php; every route here is namespaced v2.* so the v1 API is untouched.
 
 require_once __DIR__ . '/analysis2.php';
+require_once __DIR__ . '/predict.php';
 
 // ---------------------------------------------------------------- helpers
 
@@ -949,6 +950,13 @@ function v2_handle($route, $method, $user)
         case 'v2.analysis.sample':
             require_post();
             respond(a2_seed_sample($user['id']));
+            break;
+        // ---- prediction engine (win probability, timing, lift, power, anomalies) ----
+        case 'v2.analysis.predict':
+            respond(p3_overview($user, $in));
+            break;
+        case 'v2.analysis.power':
+            respond(p3_power_route($user, $in));
             break;
         case 'v2.experiments.templates':
             $rows = db()->query('SELECT tkey, name, category, description, payload FROM experiment_templates ORDER BY category, name')->fetchAll();

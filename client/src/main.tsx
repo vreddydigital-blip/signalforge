@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ApiError } from "./lib/trpc";
 import "./index.css";
+import "./prediction-suite.css";
 
 const queryClient = new QueryClient();
 

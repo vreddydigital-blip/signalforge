@@ -263,6 +263,159 @@ function TrackingSetup({ notify }: { notify: (message: string) => void }) {
   </div>;
 }
 
+// ---------------------------------------------------------------- prediction suite
+// Five predictions computed in PHP on this host from the workspace's own
+// visitor_events rows. No external ML service is involved.
+function PredictionSuite({ notify }: { notify: (message: string) => void }) {
+  const predictQuery = trpc.v2.analysis.predict.useQuery();
+  const powerMutation = trpc.v2.analysis.power.useMutation();
+  const [power, setPower] = useState<any>(null);
+  const [form, setForm] = useState({ baselineRate: "", mde: "10", power: "80" });
+
+  const data = predictQuery.data;
+  const ready = Boolean(data?.ready);
+  const win = data?.win;
+  const timing = data?.timing;
+  const lift = data?.lift;
+  const anomalies = data?.anomalies;
+  const calc = power ?? data?.power;
+
+  // Seed the calculator from the real control rate once the payload lands.
+  useEffect(() => {
+    if (data?.power && form.baselineRate === "") {
+      setForm(f => ({ ...f, baselineRate: String(data.power.baselineRate ?? 5) }));
+    }
+  }, [data?.power?.baselineRate]);
+
+  const recompute = async () => {
+    try {
+      const result = await powerMutation.mutateAsync({
+        baselineRate: Number(form.baselineRate) || 0,
+        mde: Number(form.mde) || 10,
+        power: Number(form.power) || 80,
+      });
+      setPower(result);
+    } catch (error: any) {
+      notify(error?.message ?? "The calculator could not run.");
+    }
+  };
+
+  const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v}%`);
+  const signed = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v}%`);
+
+  if (predictQuery.isLoading) {
+    return <section className="prediction-suite"><div className="prediction-loading"><Clock3 size={16} />Computing predictions from your visitor rows…</div></section>;
+  }
+
+  if (!ready) {
+    return <section className="prediction-suite">
+      <div className="section-heading-inline"><div><div className="card-kicker"><Sparkles size={14} />PREDICTIONS</div><h2>What happens next</h2></div></div>
+      <Card className="prediction-empty"><CardContent>
+        <div className="prediction-empty-icon"><Gauge size={22} /></div>
+        <h3>{data?.headline ?? "No experiment to predict from yet"}</h3>
+        <p>{data?.detail ?? "Create an experiment and let visitors arrive, or load the sample data above to see every prediction work."}</p>
+      </CardContent></Card>
+      {calc && <PowerCard calc={calc} form={form} setForm={setForm} recompute={recompute} pending={powerMutation.isPending} />}
+    </section>;
+  }
+
+  return <section className="prediction-suite">
+    <div className="section-heading-inline"><div><div className="card-kicker"><Sparkles size={14} />PREDICTIONS</div><h2>What happens next</h2></div><span className="catalog-note">{data.experiment?.name} · {formatNumber(data.visitors)} visitors · computed on this host</span></div>
+
+    <div className="prediction-grid">
+      {/* 1. Win probability */}
+      <Card className="prediction-card prediction-win"><CardContent>
+        <div className="prediction-card-head"><span className="prediction-label"><Target size={13} />WIN PROBABILITY</span><span className={`prediction-chip ${win?.decisionReady ? "chip-good" : "chip-open"}`}>{win?.decisionReady ? "Decisive" : "Open"}</span></div>
+        <h3 className="prediction-headline">{win?.headline}</h3>
+        <p className="prediction-detail">{win?.detail}</p>
+        <div className="win-rows">
+          {(win?.variants ?? []).map((v: any) => <div className={`win-row ${v.isControl ? "is-control" : ""}`} key={v.id}>
+            <div className="win-row-top"><strong>{v.name}</strong><span className="win-prob">{v.isControl ? "baseline" : pct(v.probability)}</span></div>
+            <div className="win-bar"><i style={{ width: `${v.isControl ? 50 : Math.max(2, Math.min(100, v.probability))}%` }} /></div>
+            <div className="win-row-meta"><span>{formatNumber(v.visitors)} visitors · {v.rate}%</span>{!v.isControl && <span className="win-band">lift {signed(v.lift)} <em>[{v.liftLow ?? "—"}, {v.liftHigh ?? "—"}]</em></span>}</div>
+          </div>)}
+        </div>
+      </CardContent></Card>
+
+      {/* 2. Time to significance */}
+      <Card className="prediction-card prediction-time"><CardContent>
+        <div className="prediction-card-head"><span className="prediction-label"><Clock3 size={13} />TIME TO SIGNIFICANCE</span></div>
+        <div className="big-stat">
+          <strong>{timing?.days === null || timing?.days === undefined ? "—" : timing.days}</strong>
+          <span>{timing?.days === 1 ? "day" : "days"}</span>
+        </div>
+        <h3 className="prediction-headline">{timing?.headline}</h3>
+        <p className="prediction-detail">{timing?.detail}</p>
+        <div className="prediction-facts">
+          <div><span>Current probability</span><strong>{pct(timing?.currentProbability)}</strong></div>
+          <div><span>Verdict threshold</span><strong>{pct(timing?.target)}</strong></div>
+          <div><span>Visitors still needed</span><strong>{timing?.visitorsNeeded === null || timing?.visitorsNeeded === undefined ? "—" : formatNumber(timing.visitorsNeeded)}</strong></div>
+          <div><span>Traffic per day</span><strong>{timing?.dailyTraffic ? formatNumber(timing.dailyTraffic) : "—"}</strong></div>
+        </div>
+      </CardContent></Card>
+
+      {/* 3. Projected lift */}
+      <Card className={`prediction-card prediction-lift tone-${lift?.tone ?? "info"}`}><CardContent>
+        <div className="prediction-card-head"><span className="prediction-label"><TrendingUp size={13} />PROJECTED LIFT</span>{lift?.ready && <span className={`prediction-chip ${lift.gainIsPositive ? "chip-good" : "chip-bad"}`}>{lift.gainIsPositive ? "Positive" : "Negative"}</span>}</div>
+        {lift?.ready ? <>
+          <div className="big-stat"><strong>{signed(lift.relativeLift)}</strong><span>conversion</span></div>
+          <h3 className="prediction-headline">{lift.headline}</h3>
+          <p className="prediction-detail">{lift.detail}</p>
+          <div className="prediction-facts">
+            <div><span>Control rate</span><strong>{pct(lift.controlRate)}</strong></div>
+            <div><span>Leader rate</span><strong>{pct(lift.leaderRate)}</strong></div>
+            <div><span>Absolute lift</span><strong>{lift.absoluteLiftPp > 0 ? "+" : ""}{lift.absoluteLiftPp} pp</strong></div>
+            <div><span>95% band</span><strong>{lift.bandLowPp} to {lift.bandHighPp} pp</strong></div>
+          </div>
+        </> : <><h3 className="prediction-headline">No lift to project yet</h3><p className="prediction-detail">{lift?.reason ?? "A challenger needs traffic and at least one conversion."}</p></>}
+      </CardContent></Card>
+
+      {/* 5. Anomalies */}
+      <Card className={`prediction-card prediction-anomaly tone-${anomalies?.tone ?? "info"}`}><CardContent>
+        <div className="prediction-card-head"><span className="prediction-label"><Activity size={13} />ANOMALY FLAGS</span><span className={`prediction-chip ${anomalies?.highCount > 0 ? "chip-bad" : anomalies?.count > 0 ? "chip-warn" : "chip-good"}`}>{anomalies?.count ?? 0} flagged</span></div>
+        <h3 className="prediction-headline">{anomalies?.headline}</h3>
+        <p className="prediction-detail">{anomalies?.detail}</p>
+        <div className="anomaly-list">
+          {(anomalies?.flags ?? []).length === 0 && <div className="anomaly-clear"><Check size={14} />Traffic, conversion rate and variant split all look normal.</div>}
+          {(anomalies?.flags ?? []).map((f: any, i: number) => <div className={`anomaly-item sev-${f.severity}`} key={i}>
+            <span className="anomaly-dot" />
+            <div><strong>{f.title}</strong><p>{f.detail}</p></div>
+            <span className="anomaly-metric">{f.metric}</span>
+          </div>)}
+        </div>
+      </CardContent></Card>
+    </div>
+
+    {/* 4. Power calculator */}
+    {calc && <PowerCard calc={calc} form={form} setForm={setForm} recompute={recompute} pending={powerMutation.isPending} />}
+  </section>;
+}
+
+function PowerCard({ calc, form, setForm, recompute, pending }: { calc: any; form: any; setForm: (f: any) => void; recompute: () => void; pending: boolean }) {
+  return <Card className="prediction-card prediction-power"><CardContent>
+    <div className="prediction-card-head"><span className="prediction-label"><Beaker size={13} />SAMPLE SIZE &amp; POWER</span><span className="prediction-chip chip-open">Before you launch</span></div>
+    <div className="power-layout">
+      <div className="power-inputs">
+        <label className="power-field"><span>Baseline conversion rate</span><div className="power-input-wrap"><input type="number" min="0.01" max="99" step="0.1" value={form.baselineRate} onChange={e => setForm({ ...form, baselineRate: e.target.value })} /><em>%</em></div></label>
+        <label className="power-field"><span>Minimum detectable effect</span><div className="power-input-wrap"><input type="number" min="1" max="200" step="1" value={form.mde} onChange={e => setForm({ ...form, mde: e.target.value })} /><em>%</em></div></label>
+        <label className="power-field"><span>Statistical power</span><div className="power-input-wrap"><input type="number" min="50" max="99" step="1" value={form.power} onChange={e => setForm({ ...form, power: e.target.value })} /><em>%</em></div></label>
+        <Button onClick={recompute} disabled={pending}>{pending ? "Computing…" : "Recalculate"}<ArrowUpRight size={13} /></Button>
+      </div>
+      <div className="power-result">
+        <div className="big-stat"><strong>{formatNumber(calc.perArm)}</strong><span>per arm</span></div>
+        <h3 className="prediction-headline">{calc.headline}</h3>
+        <p className="prediction-detail">{calc.detail}</p>
+        <div className="power-matrix">
+          <div className="power-matrix-head"><span>MDE</span><span>Per arm</span><span>Total</span><span>Days</span></div>
+          {(calc.matrix ?? []).map((m: any) => <div className={`power-matrix-row ${m.mde === Math.round(calc.mde) ? "is-active" : ""}`} key={m.mde}>
+            <span>{m.mde}%</span><span>{formatNumber(m.perArm)}</span><span>{formatNumber(m.total)}</span><span>{m.days === null ? "—" : m.days}</span>
+          </div>)}
+        </div>
+      </div>
+    </div>
+  </CardContent></Card>;
+}
+
 function PredictiveInsights({ notify }: { notify: (message: string) => void }) {
   const [running, setRunning] = useState("");
   const [result, setResult] = useState<any>(null);
@@ -298,6 +451,7 @@ function PredictiveInsights({ notify }: { notify: (message: string) => void }) {
     try {
       const data = await sampleMutation.mutateAsync({});
       await utils.v2.analysis.models.invalidate();
+      await utils.v2.analysis.predict.invalidate();
       await utils.experiments.list.invalidate();
       notify(data.created ? "Sample experiment created with 2,000 visitors. Run any model now." : "Sample experiment already exists.");
     } catch (error: any) {
@@ -324,6 +478,8 @@ function PredictiveInsights({ notify }: { notify: (message: string) => void }) {
     </CardContent></Card></section>}
 
     <section className="model-method-note"><div className="model-method-icon"><Lightbulb size={17} /></div><div><strong>How SignalForge runs these models</strong><p>Logistic regression, causal segment effects, two-model uplift, boosted stumps and survival timing are all computed in PHP on this host from your exposure and conversion rows. Sequential Bayesian testing uses Beta posteriors with a Beta(1,1) prior.</p></div><button onClick={() => notify("Methodology: Beta(1,1) priors for Bayesian probability; batch gradient descent for logistic regression; rank-based AUC; two-model uplift for treatment effects.")}>Read methodology <ArrowUpRight size={13} /></button></section>
+
+    <PredictionSuite notify={notify} />
   </div>;
 }
 
