@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, ArrowRight, Loader2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 function AuthForm() {
@@ -31,42 +31,71 @@ function AuthForm() {
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-orange-500";
   const onEnter = (event: React.KeyboardEvent) => { if (event.key === "Enter") submit(event); };
 
   return (
-    <div className="min-h-screen grid place-items-center bg-neutral-50 p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-7 shadow-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500 text-white"><FlaskConical size={20} /></div>
+    <div className="auth-shell">
+      <div className="auth-grid-lines" aria-hidden="true" />
+
+      <div className="auth-panel">
+        <div className="auth-brand">
+          <div className="brand-mark"><FlaskConical size={19} strokeWidth={2.4} /></div>
           <div>
-            <div className="text-lg font-bold leading-tight">SignalForge</div>
-            <div className="text-xs text-neutral-500">Experiment with intent</div>
+            <div className="brand-name">SignalForge</div>
+            <div className="brand-tagline">Experiment with intent</div>
           </div>
         </div>
-        <h1 className="mb-1 text-xl font-semibold">{mode === "login" ? "Welcome back" : "Create your workspace"}</h1>
-        <p className="mb-5 text-sm text-neutral-500">{mode === "login" ? "Sign in to see your experiments." : "Start running A/B tests in minutes."}</p>
-        <div className="space-y-3" onKeyDown={onEnter}>
+
+        <span className="auth-kicker">
+          <span className="live-pulse" />
+          {mode === "login" ? "Secure console access" : "New workspace"}
+        </span>
+
+        <h1 className="auth-title">{mode === "login" ? "Welcome back" : "Create your workspace"}</h1>
+        <p className="auth-sub">
+          {mode === "login" ? "Sign in to see your experiments." : "Start running A/B tests in minutes."}
+        </p>
+
+        <div className="auth-fields" onKeyDown={onEnter}>
           {mode === "register" && (
-            <label className="block text-sm font-medium">Name
-              <input className={`${inputClass} mt-1`} value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
+            <label className="auth-field">Name
+              <input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Ada Lovelace" />
             </label>
           )}
-          <label className="block text-sm font-medium">Email
-            <input className={`${inputClass} mt-1`} type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+          <label className="auth-field">Email
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" placeholder="you@company.com" />
           </label>
-          <label className="block text-sm font-medium">Password
-            <input className={`${inputClass} mt-1`} type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+          <label className="auth-field">Password
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="••••••••" />
           </label>
-          {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-          <Button className="w-full" disabled={busy} onClick={submit}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</Button>
+
+          {error && <p className="auth-error" role="alert">{error}</p>}
+
+          <Button className="auth-submit" disabled={busy} onClick={submit}>
+            {busy ? <><Loader2 size={15} className="spin" /> Please wait…</> : <>{mode === "login" ? "Sign in" : "Create account"} <ArrowRight size={15} /></>}
+          </Button>
         </div>
-        <p className="mt-5 text-center text-sm text-neutral-500">
+
+        <p className="auth-switch">
           {mode === "login" ? "New here? " : "Already have an account? "}
-          <button className="font-medium text-orange-600 hover:underline" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
+          <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
             {mode === "login" ? "Create an account" : "Sign in"}
           </button>
         </p>
+      </div>
+
+      <div className="auth-aside">
+        <span className="auth-kicker"><span className="live-pulse" /> SignalForge console</span>
+        <h2 className="auth-aside-title">Every test, measured<br />to the last signal.</h2>
+        <p className="auth-aside-copy">
+          Guided experiment briefs, Bayesian readouts and segment-level lift — in one instrument panel.
+        </p>
+        <ul className="auth-aside-list">
+          <li>Bayesian probability, not p-hacks</li>
+          <li>Segment-level lift you can act on</li>
+          <li>One-line tracking snippet</li>
+          <li>Automatic winner detection</li>
+        </ul>
       </div>
     </div>
   );
@@ -75,7 +104,12 @@ function AuthForm() {
 export default function AuthGate({ children }: { children: ReactNode }) {
   const me = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   if (me.isLoading) {
-    return <div className="min-h-screen grid place-items-center text-sm text-neutral-500">Loading…</div>;
+    return (
+      <div className="auth-loading">
+        <Loader2 size={18} className="spin" />
+        <span>Loading console…</span>
+      </div>
+    );
   }
   if (!me.data) return <AuthForm />;
   return <>{children}</>;

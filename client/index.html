@@ -8,23 +8,37 @@
     <meta
       name="description"
       content="SignalForge is an A/B testing and conversion-rate-optimization dashboard: guided experiment setup, Bayesian readouts, segment analysis and a one-line tracking snippet." />
-    <meta name="theme-color" content="#e5643c" />
+    <meta name="theme-color" content="#07090c" />
+    <meta name="color-scheme" content="dark" />
     <meta name="robots" content="noindex, nofollow" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="SignalForge — A/B testing &amp; CRO dashboard" />
     <meta
       property="og:description"
       content="Run A/B tests with intent: guided briefs, Bayesian probability readouts and segment-level lift." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e5643c'/%3E%3Cpath d='M13 7h6v6.2l4.4 8.1A2.6 2.6 0 0 1 21.1 25H10.9a2.6 2.6 0 0 1-2.3-3.7L13 13.2V7z' fill='none' stroke='%23fff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M11.6 19h8.8' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c9f751'/%3E%3Cpath d='M8 21.5c2.6 0 3.1-11 5.7-11s3.1 11 5.7 11' fill='none' stroke='%230a0d12' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='23' cy='10.5' r='2.2' fill='%230a0d12'/%3E%3C/svg%3E"
     />
+    <style>
+      /* paint the dark canvas before the bundle boots — no white flash */
+      html, body { background: #07090c; }
+      body { margin: 0; }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
     <noscript>
-      <div style="font-family: system-ui, sans-serif; padding: 40px; text-align: center">
+      <div style="font-family: system-ui, sans-serif; padding: 40px; text-align: center; background: #07090c; color: #eef2f8; min-height: 100vh">
         <h1>SignalForge</h1>
         <p>This dashboard needs JavaScript enabled to run.</p>
       </div>
