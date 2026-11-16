@@ -125,6 +125,27 @@
 }
 .win-band em { color: var(--text-lo); font-style: normal; }
 
+/* ---- always-valid sub-row + note ---- */
+.win-row-sub {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 5px; padding-top: 5px;
+  border-top: 1px dashed var(--line);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.win-row-sub span:last-child { color: var(--signal); }
+.prediction-note {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 14px 0 0; padding: 9px 11px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: rgba(201, 247, 81, 0.045);
+  color: var(--text-lo);
+  font-size: 10.5px; line-height: 1.55;
+}
+.prediction-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--signal); }
+
 /* ---- fact grid ---- */
 .prediction-facts {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));

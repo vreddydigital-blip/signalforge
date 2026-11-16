@@ -323,18 +323,20 @@ function PredictionSuite({ notify }: { notify: (message: string) => void }) {
     <div className="section-heading-inline"><div><div className="card-kicker"><Sparkles size={14} />PREDICTIONS</div><h2>What happens next</h2></div><span className="catalog-note">{data.experiment?.name} · {formatNumber(data.visitors)} visitors · computed on this host</span></div>
 
     <div className="prediction-grid">
-      {/* 1. Win probability */}
+      {/* 1. Win probability — always-valid */}
       <Card className="prediction-card prediction-win"><CardContent>
-        <div className="prediction-card-head"><span className="prediction-label"><Target size={13} />WIN PROBABILITY</span><span className={`prediction-chip ${win?.decisionReady ? "chip-good" : "chip-open"}`}>{win?.decisionReady ? "Decisive" : "Open"}</span></div>
+        <div className="prediction-card-head"><span className="prediction-label"><Target size={13} />WIN PROBABILITY · ALWAYS-VALID</span><span className={`prediction-chip ${win?.decisionReady ? "chip-good" : "chip-open"}`}>{win?.decisionReady ? "Decisive" : "Open"}</span></div>
         <h3 className="prediction-headline">{win?.headline}</h3>
         <p className="prediction-detail">{win?.detail}</p>
         <div className="win-rows">
           {(win?.variants ?? []).map((v: any) => <div className={`win-row ${v.isControl ? "is-control" : ""}`} key={v.id}>
-            <div className="win-row-top"><strong>{v.name}</strong><span className="win-prob">{v.isControl ? "baseline" : pct(v.probability)}</span></div>
-            <div className="win-bar"><i style={{ width: `${v.isControl ? 50 : Math.max(2, Math.min(100, v.probability))}%` }} /></div>
+            <div className="win-row-top"><strong>{v.name}</strong><span className="win-prob">{v.isControl ? "baseline" : pct(v.confidence)}</span></div>
+            <div className="win-bar"><i style={{ width: `${v.isControl ? 50 : Math.max(2, Math.min(100, v.confidence ?? 0))}%` }} /></div>
             <div className="win-row-meta"><span>{formatNumber(v.visitors)} visitors · {v.rate}%</span>{!v.isControl && <span className="win-band">lift {signed(v.lift)} <em>[{v.liftLow ?? "—"}, {v.liftHigh ?? "—"}]</em></span>}</div>
+            {!v.isControl && <div className="win-row-sub"><span>posterior {pct(v.probability)}</span><span>always-valid {pct(v.confidence)}</span></div>}
           </div>)}
         </div>
+        <p className="prediction-note"><ShieldCheck size={12} />Safe to check at any time. This is an always-valid (anytime-valid) confidence, so opening the dashboard daily and stopping when it crosses 95% does not inflate the false-positive rate the way a one-shot test would.</p>
       </CardContent></Card>
 
       {/* 2. Time to significance */}

@@ -24,11 +24,36 @@ const SF_PLAN_LIMITS = [
     'Scale'  => ['experiments' => 50, 'variants' => 8],
 ];
 
+// Where the real credentials live. This path is OUTSIDE the web root, so the
+// file can never be served as plain text even if PHP stops executing in htdocs.
+// It is a 0700 directory owned by this account, under /home/uploads (which is
+// on PHP's open_basedir allow-list, so it is readable from here).
+if (!defined('SF_PRIVATE_CONFIG')) {
+    define('SF_PRIVATE_CONFIG', '/home/uploads/sf_43438998/config.php');
+}
+
 function cfg($key)
 {
     static $config = null;
     if ($config === null) {
-        $config = require __DIR__ . '/config.php';
+        // Preferred: the private file above the web root.
+        if (is_readable(SF_PRIVATE_CONFIG)) {
+            $config = require SF_PRIVATE_CONFIG;
+        }
+        // Fallback: the in-web-root copy, kept only so a host that cannot read
+        // the private path still boots. It is denied by .htaccess.
+        if (!is_array($config) || !isset($config['db_host'])) {
+            $local = __DIR__ . '/config.php';
+            if (is_readable($local)) {
+                $maybe = require $local;
+                if (is_array($maybe) && isset($maybe['db_host'])) {
+                    $config = $maybe;
+                }
+            }
+        }
+        if (!is_array($config)) {
+            $config = [];
+        }
     }
     return isset($config[$key]) ? $config[$key] : null;
 }

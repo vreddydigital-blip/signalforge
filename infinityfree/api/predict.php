@@ -5,8 +5,11 @@
 // Insights page are produced on this host, from this workspace's data.
 //
 // Five capabilities:
-//   1. Win probability  - Beta posteriors per variant, P(variant > control),
-//                         with a credible band on the lift.
+//   1. Win probability  - always-valid (anytime-valid) confidence that each
+//                         variant beats control, via a mixture SPRT, plus the
+//                         Bayesian posterior and a credible band on the lift.
+//                         The decision number is peek-safe: it stays valid no
+//                         matter how often the dashboard is opened.
 //   2. Time to significance - how many days until the leader reaches a verdict
 //                         at the current traffic rate.
 //   3. Projected lift   - expected conversion gain if the leader ships.
@@ -166,6 +169,69 @@ function p3_chi2_sf($chi2, $df)
     $h = 2.0 / (9.0 * $df);
     $z = (pow($chi2 / $df, 1.0 / 3.0) - (1.0 - $h)) / sqrt($h);
     return max(0.0, min(1.0, 1.0 - normal_cdf($z)));
+}
+
+// ------------------------------------------------------------ always-valid test
+
+// Always-valid (anytime-valid) two-proportion test.
+//
+// A fixed-sample test only holds its error rate if it is read exactly once.
+// Checking a dashboard daily and stopping the first time it crosses 95% pushes
+// the real false-positive rate far above 5%. This test is built on a mixture
+// sequential probability ratio test (mSPRT): under the null the test statistic
+// is a non-negative martingale, so by Ville's inequality the probability of
+// EVER crossing a threshold is bounded by that threshold, however often the
+// number is read.
+//
+// Reference: Johari, Koomen, Pekelis & Walsh, "Always Valid Inference:
+// Continuous Monitoring of A/B Tests" (2015/2017).
+//
+// $n1/$x1 = variant visitors/conversions, $n0/$x0 = control.
+// $tau is the mixing scale: the effect size the test is tuned to detect.
+function p3_always_valid($n1, $x1, $n0, $x0, $tau = null)
+{
+    if ($n1 <= 0 || $n0 <= 0) {
+        return ['p' => 1.0, 'confidence' => 0.0, 'confidenceControl' => 0.0,
+                'z' => 0.0, 'delta' => 0.0, 'tau' => 0.0, 'lambda' => 1.0];
+    }
+    $p1 = $x1 / $n1;
+    $p0 = $x0 / $n0;
+    $delta = $p1 - $p0;
+
+    // Unpooled variance of the difference in proportions.
+    $V = ($p1 * (1.0 - $p1)) / $n1 + ($p0 * (1.0 - $p0)) / $n0;
+    if ($V <= 1e-15) {
+        return ['p' => 1.0, 'confidence' => 0.0, 'confidenceControl' => 0.0,
+                'z' => 0.0, 'delta' => $delta, 'tau' => 0.0, 'lambda' => 1.0];
+    }
+
+    // Mixing scale. Default: tuned to a 50% relative lift on the control rate,
+    // with a 2pp floor so a very small baseline still gets a usable test.
+    if ($tau === null) {
+        $tau = max(0.02, 0.5 * $p0);
+    }
+    $t2 = $tau * $tau;
+
+    $z = $delta / sqrt($V);
+    // log of the mixture martingale
+    $logLambda = 0.5 * (log($V) - log($V + $t2)) + ($t2 * $z * $z) / (2.0 * ($V + $t2));
+    $lambda = exp($logLambda);
+    $pTwo = $lambda > 0.0 ? min(1.0, 1.0 / $lambda) : 1.0;
+
+    // One-sided readings. A positive estimate can only reject "the variant is
+    // not better"; a negative estimate can only reject "control is not better".
+    $pPlus  = $delta > 0.0 ? $pTwo : 1.0;
+    $pMinus = $delta < 0.0 ? $pTwo : 1.0;
+
+    return [
+        'p' => $pTwo,
+        'confidence' => (1.0 - $pPlus) * 100.0,
+        'confidenceControl' => (1.0 - $pMinus) * 100.0,
+        'z' => $z,
+        'delta' => $delta,
+        'tau' => $tau,
+        'lambda' => $lambda,
+    ];
 }
 
 // ------------------------------------------------------------ dataset
@@ -335,7 +401,8 @@ function p3_win_probability($data)
                 'id' => $a['id'], 'name' => $a['name'], 'isControl' => true,
                 'visitors' => $a['visitors'], 'conversions' => $a['conversions'],
                 'rate' => round($a['rate'] * 100, 2),
-                'probability' => 50.0, 'lift' => 0.0, 'liftLow' => null, 'liftHigh' => null,
+                'probability' => 50.0, 'confidence' => null, 'confidenceControl' => null,
+                'lift' => 0.0, 'liftLow' => null, 'liftHigh' => null,
                 'verdict' => 'baseline',
             ];
             continue;
@@ -348,6 +415,15 @@ function p3_win_probability($data)
         // Never show a flat 0 or 100: the posterior is never certain.
         $prob = max(0.1, min(99.9, $prob));
 
+        // Always-valid (anytime-valid) confidence that this variant beats
+        // control. This is the decision number: it stays valid no matter how
+        // often the dashboard is opened, so daily peeking cannot inflate the
+        // false-positive rate the way a fixed-sample threshold does.
+        $av = p3_always_valid($a['visitors'], $a['conversions'],
+                              $control['visitors'], $control['conversions']);
+        $avConf = $a['visitors'] === 0 ? 0.0 : $av['confidence'];
+        $avConfControl = $a['visitors'] === 0 ? 0.0 : $av['confidenceControl'];
+
         list($m1, $v1) = posterior($a['visitors'], $a['conversions']);
         list($m0, $v0) = posterior($control['visitors'], $control['conversions']);
         $se = sqrt($v1 + $v0);
@@ -358,12 +434,14 @@ function p3_win_probability($data)
         $relLow = $cRate > 0 ? ($lo / $cRate) * 100.0 : null;
         $relHigh = $cRate > 0 ? ($hi / $cRate) * 100.0 : null;
 
+        // The verdict is driven by the always-valid confidence, not the
+        // one-shot posterior.
         $verdict = 'inconclusive';
         if ($a['visitors'] === 0) {
             $verdict = 'no_traffic';
-        } elseif ($prob >= 95.0) {
+        } elseif ($avConf >= 95.0) {
             $verdict = 'likely_winner';
-        } elseif ($prob <= 5.0) {
+        } elseif ($avConfControl >= 95.0) {
             $verdict = 'likely_loser';
         }
 
@@ -372,6 +450,8 @@ function p3_win_probability($data)
             'visitors' => $a['visitors'], 'conversions' => $a['conversions'],
             'rate' => round($a['rate'] * 100, 2),
             'probability' => round($prob, 1),
+            'confidence' => round($avConf, 1),
+            'confidenceControl' => round($avConfControl, 1),
             'lift' => round($relLift, 1),
             'liftLow' => $relLow === null ? null : round($relLow, 1),
             'liftHigh' => $relHigh === null ? null : round($relHigh, 1),
@@ -379,7 +459,20 @@ function p3_win_probability($data)
         ];
     }
 
-    usort($out, function ($a, $b) { return $b['probability'] <=> $a['probability']; });
+    // The control row's confidence is the always-valid confidence that control
+    // beats the strongest challenger.
+    $bestChallengerControl = 0.0;
+    foreach ($out as $o) {
+        if (!$o['isControl'] && $o['confidenceControl'] !== null
+            && $o['confidenceControl'] > $bestChallengerControl) {
+            $bestChallengerControl = $o['confidenceControl'];
+        }
+    }
+    foreach ($out as $i => $o) {
+        if ($o['isControl']) { $out[$i]['confidence'] = round($bestChallengerControl, 1); }
+    }
+
+    usort($out, function ($a, $b) { return $b['confidence'] <=> $a['confidence']; });
 
     $leader = null;
     foreach ($out as $o) {
@@ -393,18 +486,15 @@ function p3_win_probability($data)
     } elseif ($leader === null || $leader['visitors'] === 0) {
         $headline = 'Only the control has traffic';
         $detail = 'No challenger has recorded a visitor yet, so there is nothing to compare against.';
-    } elseif ($best['probability'] >= 95.0) {
-        $headline = sprintf('%s leads with %s%% probability', $best['name'], p3_pct($best['probability']));
-        $detail = sprintf('Its lift is %+.1f%% (95%% credible band %+.1f%% to %+.1f%%).', $best['lift'], $best['liftLow'], $best['liftHigh']);
-    } elseif ($best['probability'] <= 5.0) {
-        $headline = 'Control is ahead with high confidence';
-        $detail = sprintf('The best challenger sits at %s%% probability to beat control.', p3_pct($best['probability']));
+    } elseif ($best['confidence'] >= 95.0) {
+        $headline = sprintf('%s leads with %s%% always-valid confidence', $best['name'], p3_pct($best['confidence']));
+        $detail = sprintf('Its lift is %+.1f%% (95%% credible band %+.1f%% to %+.1f%%). This reading is valid at any time — checking it daily does not inflate the error rate.', $best['lift'], $best['liftLow'], $best['liftHigh']);
     } elseif ($best['isControl']) {
-        $headline = sprintf('Control leads at %s%% — not yet decisive', p3_pct($best['probability']));
-        $detail = 'No challenger is ahead yet. Between 5% and 95% the evidence is still open.';
+        $headline = sprintf('Control leads at %s%% always-valid confidence — not yet decisive', p3_pct($best['confidence']));
+        $detail = 'No challenger is ahead yet. Below 95% the evidence is still open, and this reading stays valid however often you look.';
     } else {
-        $headline = sprintf('%s leads at %s%% — not yet decisive', $best['name'], p3_pct($best['probability']));
-        $detail = 'Between 5% and 95% the evidence is still open. Keep collecting.';
+        $headline = sprintf('%s leads at %s%% always-valid confidence — not yet decisive', $best['name'], p3_pct($best['confidence']));
+        $detail = 'Below 95% the evidence is still open. This reading stays valid however often you look.';
     }
 
     return [
@@ -414,7 +504,8 @@ function p3_win_probability($data)
         'control' => ['id' => $control['id'], 'name' => $control['name'],
                       'rate' => round($control['rate'] * 100, 2), 'visitors' => $control['visitors']],
         'variants' => $out,
-        'decisionReady' => $best['probability'] >= 95.0 || $best['probability'] <= 5.0,
+        'decisionReady' => $best['confidence'] >= 95.0,
+        'method' => 'always-valid (mSPRT)',
     ];
 }
 
@@ -450,7 +541,10 @@ function p3_time_to_significance($data, $traffic, $target = 0.95)
     $aA = $leader['conversions'] + 1.0;
     $bA = max($leader['visitors'] - $leader['conversions'], 0) + 1.0;
 
-    $current = p3_prob_beats($aA, $bA, $cA, $cB) * 100.0;
+    // The verdict threshold is the always-valid confidence, so the projected
+    // date matches the peek-safe number on the win-probability card.
+    $current = p3_always_valid($leader['visitors'], $leader['conversions'],
+                               $control['visitors'], $control['conversions'])['confidence'];
     if ($current >= $target * 100.0) {
         return [
             'ready' => true, 'decided' => true, 'days' => 0,
@@ -482,7 +576,9 @@ function p3_time_to_significance($data, $traffic, $target = 0.95)
     $found = null;
     for ($i = 0; $i < 26; $i++) {
         $mid = ($lo + $hi) / 2.0;
-        $p = p3_prob_beats($aA * $mid, $bA * $mid, $cA * $mid, $cB * $mid) * 100.0;
+        // Scale both arms by the same factor: same observed rates, more data.
+        $p = p3_always_valid($leader['visitors'] * $mid, $leader['conversions'] * $mid,
+                             $control['visitors'] * $mid, $control['conversions'] * $mid)['confidence'];
         if ($p >= $target * 100.0) {
             $found = $mid;
             $hi = $mid;
