@@ -32,14 +32,24 @@ COPY . /var/www/html/
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html
 
-# Render and most container hosts inject $PORT. Apache listens on 80 by default;
-# this keeps it working if the platform expects a different port.
 ENV APACHE_DOCUMENT_ROOT=/var/www/html
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
+# Container hosts (Railway, Render, Fly) inject $PORT and route traffic to it.
+# Apache's default vhost listens on 80, so without this the app is unreachable
+# on any platform that does not use port 80. The entrypoint rewrites the listen
+# port at start-up from $PORT, defaulting to 80 when it is not set.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENV PORT=80
 EXPOSE 80
 
-# The health endpoint is the readiness probe.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD php -r '$r=@file_get_contents("http://127.0.0.1/api/health.php"); exit($r===false?1:0);'
+# The health endpoint is the readiness probe. It uses $PORT so it follows the
+# platform's port instead of assuming 80.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD php -r '$p=getenv("PORT")?:"80"; $r=@file_get_contents("http://127.0.0.1:".$p."/api/health.php"); exit($r===false?1:0);'
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["apache2-foreground"]
