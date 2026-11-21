@@ -144,9 +144,14 @@ try {
         $xst = $pdo->prepare("SELECT experimentId, variantId FROM visitor_events WHERE visitorId = ? AND type = 'exposure' AND experimentId IN ($in1)");
         $xst->execute(array_merge([$visitorId], $ids));
         $recorded = 0;
-        $ins = $pdo->prepare("INSERT IGNORE INTO visitor_events (experimentId, variantId, visitorId, type) VALUES (?, ?, ?, 'conversion')");
+        // Revenue was accepted in the request body but never written, so every
+        // conversion stored revenue = 0 and the dashboard's revenue total was
+        // always 0 no matter what the caller sent. Persist it now.
+        $revenue = isset($in['revenue']) && is_numeric($in['revenue']) ? (float) $in['revenue'] : 0.0;
+        if ($revenue < 0) { $revenue = 0.0; }
+        $ins = $pdo->prepare("INSERT IGNORE INTO visitor_events (experimentId, variantId, visitorId, type, revenue) VALUES (?, ?, ?, 'conversion', ?)");
         foreach ($xst->fetchAll() as $x) {
-            $ins->execute([(int) $x['experimentId'], (int) $x['variantId'], $visitorId]);
+            $ins->execute([(int) $x['experimentId'], (int) $x['variantId'], $visitorId, $revenue]);
             // INSERT IGNORE reports 0 rows when this visitor already converted for
             // that experiment, so only count rows that were really written.
             $recorded += $ins->rowCount();
