@@ -111,7 +111,11 @@ function v2_dashboard($user, $in)
 
     if ($ids) {
         $in1 = in_placeholders($ids);
-        $q = $pdo->prepare("SELECT type, device, browser, country, landingPage, revenue, DATE_FORMAT(createdAt,'%Y-%m-%d') AS d, COUNT(*) AS n, SUM(revenue) AS rev
+        // `revenue` must NOT be selected bare here: it is not in the GROUP BY
+        // list, and MySQL 8 defaults to sql_mode=only_full_group_by, which
+        // rejects the query with error 1055. Only the aggregate SUM(revenue)
+        // is used below, so the bare column is simply dropped.
+        $q = $pdo->prepare("SELECT type, device, browser, country, landingPage, DATE_FORMAT(createdAt,'%Y-%m-%d') AS d, COUNT(*) AS n, SUM(revenue) AS rev
             FROM visitor_events WHERE experimentId IN ($in1) AND UNIX_TIMESTAMP(createdAt) BETWEEN ? AND ?
             GROUP BY type, device, browser, country, landingPage, d");
         $q->execute(array_merge($ids, [$from, $to]));
