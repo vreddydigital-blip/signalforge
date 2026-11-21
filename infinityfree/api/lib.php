@@ -326,9 +326,26 @@ function is_https()
 
 function client_ip()
 {
+    // Cloudflare's header, when the site sits behind Cloudflare.
     if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
         return (string) $_SERVER['HTTP_CF_CONNECTING_IP'];
     }
+
+    // Container hosts (Railway, Render, Fly) terminate TLS at their own edge,
+    // so REMOTE_ADDR is the edge proxy - and on Railway that address is not
+    // stable across requests. Keying the rate limiter on it meant every
+    // request looked like a brand-new client, so the counter never accumulated
+    // and brute-force protection was completely inert in production.
+    // The edge appends the real peer address to X-Forwarded-For; earlier
+    // entries are client-supplied and must not be trusted, so read the last.
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $parts = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
+        $last = trim((string) end($parts));
+        if (filter_var($last, FILTER_VALIDATE_IP)) {
+            return $last;
+        }
+    }
+
     return isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown';
 }
 

@@ -208,8 +208,18 @@ try {
             $st = db()->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
             $st->execute([$email]);
             $user = $st->fetch();
-            if (!$user || !password_verify($password, $user['passwordHash'])) {
-                fail('Incorrect email or password.', 'UNAUTHORIZED', 401);
+            if (!$user) {
+                // Distinguish "no such account" from "wrong password". Reporting
+                // both as "Incorrect email or password" left people retyping a
+                // password for an account that had never been created.
+                fail(
+                    'No account exists for this email. Use "Create an account" to sign up.',
+                    'NO_SUCH_ACCOUNT',
+                    401
+                );
+            }
+            if (!password_verify($password, $user['passwordHash'])) {
+                fail('Incorrect password for this email.', 'UNAUTHORIZED', 401);
             }
             db()->prepare('UPDATE users SET lastSignedIn = CURRENT_TIMESTAMP WHERE id = ?')->execute([(int) $user['id']]);
             start_session((int) $user['id']);
