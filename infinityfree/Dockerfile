@@ -27,8 +27,20 @@
 FROM php:8.2-apache
 
 # pdo_mysql is the only extension the app needs beyond the defaults.
+#
+# MPM: mod_php (libphp.so) only works with the prefork MPM. The php:*-apache
+# image normally ships prefork-only, but the base image is rebuilt regularly
+# (it moved to debian:trixie-slim) and a rebuild can leave mpm_event enabled
+# alongside mpm_prefork. Apache then refuses to start with
+#   AH00534: apache2: Configuration error: More than one MPM loaded.
+# which crashes the container at runtime, after a build that looked fine.
+# So we normalise the MPM state explicitly instead of trusting the base image,
+# and run `apache2ctl -t` here so a broken config fails the BUILD with a clear
+# log rather than crash-looping the deploy.
 RUN docker-php-ext-install pdo_mysql \
-    && a2enmod rewrite headers deflate expires
+    && (a2dismod mpm_event mpm_worker || true) \
+    && a2enmod mpm_prefork rewrite headers deflate expires \
+    && apache2ctl -t
 
 # Serve from /var/www/html (the Apache default), which is the web root.
 WORKDIR /var/www/html
