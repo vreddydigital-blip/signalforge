@@ -7,19 +7,6 @@ require __DIR__ . '/v2.php';
 
 header('Cache-Control: no-store');
 $route = isset($_GET['route']) ? (string) $_GET['route'] : '';
-
-// TEMPORARY DIAGNOSTIC - remove after debugging the rate limiter.
-if ($route === 'debug.ip') {
-    respond([
-        'client_ip' => client_ip(),
-        'remote_addr' => isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : null,
-        'xff' => isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? $_SERVER['HTTP_X_FORWARDED_FOR'] : null,
-        'cf' => isset($_SERVER['HTTP_CF_CONNECTING_IP']) ? $_SERVER['HTTP_CF_CONNECTING_IP'] : null,
-        'real_ip' => isset($_SERVER['HTTP_X_REAL_IP']) ? $_SERVER['HTTP_X_REAL_IP'] : null,
-        'host' => isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : null,
-        'server_addr' => isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : null,
-    ]);
-}
 $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 
 function query_input()

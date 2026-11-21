@@ -336,13 +336,30 @@ function client_ip()
     // stable across requests. Keying the rate limiter on it meant every
     // request looked like a brand-new client, so the counter never accumulated
     // and brute-force protection was completely inert in production.
-    // The edge appends the real peer address to X-Forwarded-For; earlier
-    // entries are client-supplied and must not be trusted, so read the last.
+    //
+    // X-Real-IP is the header to trust here. Railway's edge OVERWRITES it on
+    // every request with the true peer address, so a client cannot forge it
+    // (verified: sending X-Real-IP: 9.9.9.9 is discarded and the real address
+    // is used). It is also stable across requests, which is what the limiter
+    // needs.
+    if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+        $real = trim((string) $_SERVER['HTTP_X_REAL_IP']);
+        if (filter_var($real, FILTER_VALIDATE_IP)) {
+            return $real;
+        }
+    }
+
+    // X-Forwarded-For is the fallback, but NOT its last hop. On Railway the
+    // edge appends its own internal CGNAT address (100.64.x.x) as the last
+    // entry, and that address rotates on every request - reading it made the
+    // limiter inert again. The FIRST entry is the original client as the edge
+    // saw it. Railway overwrites the whole header, so the first entry is not
+    // client-supplied there either.
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $parts = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
-        $last = trim((string) end($parts));
-        if (filter_var($last, FILTER_VALIDATE_IP)) {
-            return $last;
+        $first = trim((string) $parts[0]);
+        if (filter_var($first, FILTER_VALIDATE_IP)) {
+            return $first;
         }
     }
 
