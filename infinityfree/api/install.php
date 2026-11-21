@@ -4,9 +4,17 @@ require __DIR__ . '/lib.php';
 header('Content-Type: text/plain; charset=utf-8');
 
 $key = (string) cfg('install_key');
-if ($key === '' || $key === 'CHANGE-ME-install-key' || !hash_equals($key, (string) (isset($_GET['key']) ? $_GET['key'] : ''))) {
+if ($key === '' || $key === 'CHANGE-ME-install-key') {
     http_response_code(403);
-    exit("Forbidden. Set a real install_key in api/config.php and pass it as ?key=...\n");
+    exit(
+        "Forbidden. No install_key is configured.\n"
+        . "Set SF_INSTALL_KEY in the environment, or install_key in your config file,\n"
+        . "then call this page again as ?key=THAT_VALUE\n"
+    );
+}
+if (!hash_equals($key, (string) (isset($_GET['key']) ? $_GET['key'] : ''))) {
+    http_response_code(403);
+    exit("Forbidden. The ?key= value does not match the configured install_key.\n");
 }
 
 $statements = [
@@ -131,8 +139,23 @@ try {
         db()->exec("ALTER TABLE agent_runs ADD COLUMN remoteId VARCHAR(64) NULL AFTER engine");
     }
 
-    echo "OK - tables are ready.\nNow DELETE api/install.php from your hosting.\n";
+    // The v2 feature set (dashboard, integrations, AI, crawls) needs its own
+    // tables. Run that schema here too, so a fresh install is complete in one
+    // step instead of leaving half the app answering 500s.
+    define('SF_SCHEMA2_EMBEDDED', true);
+    require __DIR__ . '/schema2.php';
+
+    if (empty($GLOBALS['sf_schema2_ok'])) {
+        echo "\nWARNING: the v2 schema did not complete - see the FAILED line above.\n";
+    }
+
+    echo "OK - tables are ready.\n";
+    echo "Now DELETE api/install.php from your hosting.\n";
+    echo "Then open api/health.php to confirm every check passes.\n";
 } catch (Throwable $e) {
     http_response_code(500);
-    echo "Database error: " . $e->getMessage() . "\nCheck the values in api/config.php.\n";
+    echo "Database error: " . $e->getMessage() . "\n";
+    echo "\n";
+    echo "This is a connection or permissions problem, not a schema problem.\n";
+    echo "Open api/health.php for a step-by-step diagnosis.\n";
 }

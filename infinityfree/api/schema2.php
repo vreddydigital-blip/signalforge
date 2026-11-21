@@ -1,13 +1,17 @@
 <?php
 // SignalForge v2 schema migration. Idempotent: safe to run repeatedly.
 // Open once: /api/schema2.php?key=<install_key>
-require __DIR__ . '/lib.php';
+require_once __DIR__ . '/lib.php';
 header('Content-Type: text/plain; charset=utf-8');
 
-$key = (string) cfg('install_key');
-if ($key === '' || $key === 'CHANGE-ME-install-key' || !hash_equals($key, (string) (isset($_GET['key']) ? $_GET['key'] : ''))) {
-    http_response_code(403);
-    exit("Forbidden. Pass ?key=<install_key>\n");
+// When install.php embeds this file it has already checked the key, so the
+// guard below is skipped and the schema runs as part of the main install.
+if (!defined('SF_SCHEMA2_EMBEDDED')) {
+    $key = (string) cfg('install_key');
+    if ($key === '' || $key === 'CHANGE-ME-install-key' || !hash_equals($key, (string) (isset($_GET['key']) ? $_GET['key'] : ''))) {
+        http_response_code(403);
+        exit("Forbidden. Pass ?key=<install_key>\n");
+    }
 }
 
 $statements = [
@@ -359,11 +363,13 @@ try {
     }
     $done[] = 'templates seeded';
 
+    $GLOBALS['sf_schema2_ok'] = true;
     echo "OK - v2 schema ready.\n";
     foreach ($done as $d) {
         echo "  - $d\n";
     }
 } catch (Throwable $e) {
+    $GLOBALS['sf_schema2_ok'] = false;
     http_response_code(500);
     echo "FAILED: " . $e->getMessage() . "\n";
 }

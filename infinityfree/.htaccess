@@ -13,6 +13,18 @@ DirectoryIndex index.html
   </IfModule>
 </Files>
 
+# The example config is a template, not a secret, but it has no business being
+# served either.
+<Files "sf-config.example.php">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>
+
 # Block dotfiles (.env, .git, .htaccess itself is still read by Apache).
 <FilesMatch "^\.">
   <IfModule mod_authz_core.c>

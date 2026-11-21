@@ -650,5 +650,29 @@ try {
     }
 } catch (Throwable $e) {
     error_log('[signalforge] ' . $e->getMessage());
-    fail('Server error. Check api/config.php and that api/install.php has been run.', 'INTERNAL_SERVER_ERROR', 500);
+
+    // A database problem is by far the most common cause of a 500 here, and the
+    // old catch-all message sent people to config.php and install.php even when
+    // the real fault was a dead database host. Say what actually broke.
+    $message = $e->getMessage();
+    $isDb = $e instanceof PDOException
+        || stripos($message, 'Database connection failed') !== false
+        || stripos($message, 'No database is configured') !== false
+        || stripos($message, 'DATABASE_URL') !== false
+        || stripos($message, 'SQLSTATE') !== false;
+
+    if ($isDb) {
+        fail(
+            'Database unavailable. ' . $message
+            . ' Run api/health.php for a full diagnostic.',
+            'DATABASE_UNAVAILABLE',
+            503
+        );
+    }
+
+    fail(
+        'Server error. ' . $message . ' Run api/health.php for a full diagnostic.',
+        'INTERNAL_SERVER_ERROR',
+        500
+    );
 }

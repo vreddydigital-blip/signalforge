@@ -1,102 +1,198 @@
-SignalForge for InfinityFree
-============================
+SignalForge - deployment guide
+==============================
 
-This package is already configured to talk to the live orchestration service:
-  https://signalforge-orchestrator.onrender.com
+WHAT CHANGED AND WHY
+--------------------
+The app used to run on InfinityFree, with the database on a separate
+InfinityFree MySQL server (sql210.infinityfree.com). That account was deleted
+for inactivity, which took the database server with it. The hostname no longer
+resolves in DNS, so every route that touches the database returned:
 
-The API token is already filled in at api/config.php -> orchestrator_token.
-Do NOT post this zip or api/config.php publicly - it contains that token.
+    Server error. Check api/config.php and that api/install.php has been run.
 
-------------------------------------------------------------
-UPLOAD STEPS
-------------------------------------------------------------
-1. Log in to InfinityFree -> Control Panel -> Online File Manager
-   (or connect with FTP using the credentials in your control panel).
+That message was misleading - config.php and install.php were both fine. The
+database simply did not exist any more.
 
-2. Open the htdocs folder. Delete InfinityFree's default files
-   (index2.html, and any default index.html) so they don't shadow the app.
+The code has been changed so this cannot happen quietly again:
 
-3. Upload EVERYTHING inside this zip into htdocs, keeping the structure:
-      htdocs/index.html
-      htdocs/tracker.js
-      htdocs/.htaccess
-      htdocs/assets/...
-      htdocs/api/config.php
-      htdocs/api/index.php
-      htdocs/api/install.php
-      htdocs/api/lib.php
-      htdocs/api/orchestrator.php
-      htdocs/api/remote.php
-      htdocs/api/track.php
+  * The database connection is now configured by ENVIRONMENT VARIABLE
+    (DATABASE_URL, or SF_DB_*), which is how a container host supplies it.
+    A config file still works, but the hardcoded InfinityFree path is no
+    longer the only option.
+  * A failed connection now says WHY - DNS, bad password, missing database,
+    TLS - instead of a generic 500.
+  * api/health.php is a new diagnostic page. Open it first whenever something
+    is wrong.
+  * api/install.php now builds the COMPLETE schema (34 tables) in one run.
+    Previously it created 8, and the v2 features needed a second, undocumented
+    step (api/schema2.php) - so a "successful" install still left half the app
+    returning 500s.
 
-   Tip: upload the zip, then use the file manager's "Extract" on it,
-   then delete the zip. That preserves the folder structure.
+You must still create the database and set the credentials yourself. Nothing
+here invents a database for you.
 
-4. Edit htdocs/api/config.php and fill in your database values:
-      db_host, db_name, db_user, db_pass
-   (Control Panel -> MySQL Databases). Leave the orchestrator_* values as they are.
-
-5. Set a real 'secret' and 'install_key' in the same file
-   (any long random text). Do not leave the CHANGE-ME placeholders.
 
 ------------------------------------------------------------
-CREATE THE TABLES (first install only)
+OPTION A - CONTAINER HOST (recommended)
 ------------------------------------------------------------
-6. Visit:
-      https://YOUR-SITE.infinityfreeapp.com/api/install.php?key=YOUR_INSTALL_KEY
-   You should see "OK - tables are ready."
+Use this if you want the app and its database to live together, so one cannot
+disappear without the other.
 
-   This creates all 8 tables, including agent_runs and agent_tasks.
-   The schema already contains the engine and remoteId columns, so a fresh
-   install needs no migration. If you installed an EARLIER version of
-   SignalForge, re-running install.php is still safe: it uses
-   CREATE TABLE IF NOT EXISTS and adds any missing columns.
+1. Push this folder to a git repository.
 
-7. DELETE api/install.php once the tables exist.
+2. On Render (or Railway / Fly), create a new Web Service from that repo.
+   The included Dockerfile builds it. Render will detect it automatically.
+
+3. Add a MySQL-compatible database. Options that have a free tier:
+     - TiDB Cloud Serverless  (MySQL-compatible, needs TLS)
+     - Aiven for MySQL
+     - Railway MySQL
+   Copy its connection string.
+
+4. Set these environment variables on the web service:
+     DATABASE_URL   = mysql://USER:PASSWORD@HOST:PORT/DATABASE
+     SF_SECRET      = <openssl rand -hex 32>
+     SF_INSTALL_KEY = <any long random string>
+   If the provider requires TLS (TiDB Cloud does), also set:
+     SF_DB_SSL      = true
+     SF_DB_SSL_CA   = /path/to/ca.pem   (only if you mount the CA bundle)
+
+5. Deploy. Then open, once:
+     https://YOUR-APP/api/install.php?key=YOUR_INSTALL_KEY
+   You should see "OK - tables are ready." followed by the v2 schema lines.
+
+6. Open:
+     https://YOUR-APP/api/health.php
+   Every check should read "ok": true.
+
+7. Register an account and confirm the dashboard loads.
+
 
 ------------------------------------------------------------
-VERIFY IT WORKS
+OPTION B - SHARED HOST WITH PHP + MYSQL (InfinityFree, cPanel, etc.)
 ------------------------------------------------------------
-8. Open https://YOUR-SITE.infinityfreeapp.com and register an account.
+Use this if you already have a host with a working MySQL database.
 
-9. Go to the "Agent mesh" page. The engine strip at the top should say
-   the LangGraph service is reachable (green). If it says "asleep" or
-   "unreachable", see the cold-start note below.
+1. In your host's control panel, create a MySQL database and a user, and note:
+     host, database name, username, password
 
-10. Click "Run orchestration". All five agents should complete and a
-    combined verdict should appear.
+2. Upload EVERYTHING in this folder into the web root (htdocs / public_html),
+   keeping the structure:
+       index.html
+       tracker.js
+       .htaccess
+       assets/...
+       api/config.php
+       api/index.php
+       api/install.php
+       api/health.php
+       api/lib.php
+       api/schema2.php
+       api/orchestrator.php
+       api/remote.php
+       api/track.php
+   Tip: upload the zip, use the file manager's "Extract", then delete the zip.
+
+3. Put the credentials OUTSIDE the web root. Copy sf-config.example.php to
+   the directory ABOVE htdocs and rename it sf-config.php, then fill it in:
+       <parent of htdocs>/sf-config.php
+   On InfinityFree that is /home/uploads/sf-config.php.
+   If you truly cannot write above the web root, you may instead edit
+   api/config.php and return an array from it - but that file is inside the
+   web root, so it is the least safe option.
+
+4. Set a real 'secret' and 'install_key' in that file. Do not leave the
+   CHANGE-ME placeholders. Generate a secret with: openssl rand -hex 32
+
+5. Open, once:
+       https://YOUR-SITE/api/install.php?key=YOUR_INSTALL_KEY
+   You should see "OK - tables are ready." and the v2 schema lines.
+
+6. DELETE api/install.php once the tables exist.
+
+7. Open https://YOUR-SITE/api/health.php and confirm every check is green.
+
+8. Register an account and confirm the dashboard loads.
+
 
 ------------------------------------------------------------
-IMPORTANT: RENDER FREE-TIER SLEEP
+IF SOMETHING IS WRONG
 ------------------------------------------------------------
-The Render service sleeps after 15 minutes with no traffic. The first
+Open api/health.php first. It checks, in order:
+
+  pdo / pdo_mysql        - are the PHP extensions present?
+  database_configured    - did it find any connection details at all?
+  session_secret         - is SF_SECRET set and long enough?
+  database_connection    - can it actually connect? (says why if not)
+  tables                 - are all 34 tables present? (names the missing ones)
+
+The "nextStep" field at the bottom tells you the first thing to fix.
+
+Add ?verbose=1 to also see which config files were read, which environment
+variables were set, and the full table list. It never prints a password.
+
+Common cases:
+
+  "The hostname does not resolve in DNS"
+      The database server no longer exists. Create a new database and point
+      DATABASE_URL at it. This is what happened to the old InfinityFree setup.
+
+  "Access denied for user"
+      Wrong username or password in DATABASE_URL / db_user / db_pass.
+
+  "Unknown database"
+      The database name is wrong, or you have not created it yet.
+
+  "MISSING: activity_log, ..."
+      The install did not complete. Re-run api/install.php?key=...
+
+  "MISSING or too short" for session_secret
+      Set SF_SECRET to a random 32+ character string. Without it, logins
+      cannot be signed and every session breaks.
+
+  TLS / certificate errors
+      Set SF_DB_SSL_CA to the provider's CA bundle, or SF_DB_SSL=false for a
+      local server that does not use TLS.
+
+
+------------------------------------------------------------
+ORCHESTRATION SERVICE (optional)
+------------------------------------------------------------
+The multi-agent orchestration runs on a separate Render service:
+    https://signalforge-orchestrator.onrender.com
+
+Set SF_ORCHESTRATOR_URL and SF_ORCHESTRATOR_TOKEN to use it. Mode 'auto'
+falls back to the built-in PHP engine when it is unreachable, so the app keeps
+working either way. The free tier sleeps after 15 minutes idle; the first
 request after a sleep can take up to ~60 seconds to wake it.
 
-What this package does about it:
-  - The run call waits up to 60 seconds (orchestrator_timeout), so a cold
-    start usually still succeeds.
-  - The dashboard's health probe only waits 8 seconds
-    (orchestrator_health_timeout), so the page never freezes for a minute.
-    It may briefly show "asleep" - that is expected, not an error.
-  - Mode is 'auto': if the service is unreachable, SignalForge falls back
-    to its built-in PHP engine so the site keeps working. Runs made that
-    way are tagged engine=local.
+To wake it before a demo, open /health on that service in a browser.
 
-To wake the service before a demo, just open
-  https://signalforge-orchestrator.onrender.com/health
-in a browser and wait for the JSON to appear.
-
-If you would rather see a hard error than a silent local fallback, change
-orchestrator_mode to 'remote' in api/config.php.
 
 ------------------------------------------------------------
-TROUBLESHOOTING
+DATA: WHAT IS LOST, WHAT MIGHT BE RECOVERABLE
 ------------------------------------------------------------
-- "The orchestration service is unreachable" -> the Render service is
-  asleep or down. Open /health in a browser to wake it, then retry.
-- Agents complete but numbers look empty -> your workspace has no traffic
-  yet. Send some events through tracker.js first.
-- 401 from the service -> the token in api/config.php does not match
-  SIGNALFORGE_API_TOKEN in Render. Fix it in Render, then update config.php.
-- Blank page -> check that .htaccess uploaded (it is a hidden file; some
-  FTP clients hide dotfiles).
+The old database is gone, so anything that lived only in it is lost:
+
+  LOST (unless you have a dump):
+    - user accounts and password hashes
+    - experiments, variants and their settings
+    - visitor events and all recorded results
+    - workspace settings, integrations, notes, tags
+    - agent run history
+
+  NOT LOST:
+    - the application code (this package)
+    - the static front end and assets
+    - the orchestration service and its configuration
+
+  POSSIBLY RECOVERABLE:
+    - If you downloaded a database dump from the old host's /backups/ folder
+      at any point, that dump can be imported into the new database and your
+      users and experiment data come back. Check your downloads before you
+      rebuild from scratch.
+    - If you have the old MySQL credentials and the server were still up, a
+      mysqldump would work - but the host no longer resolves, so it is not.
+
+  After installing, you will need to register a new account. If you restore a
+  dump, existing accounts and their passwords work as before.

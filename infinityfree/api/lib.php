@@ -24,52 +24,272 @@ const SF_PLAN_LIMITS = [
     'Scale'  => ['experiments' => 50, 'variants' => 8],
 ];
 
-// Where the real credentials live. This path is OUTSIDE the web root, so the
-// file can never be served as plain text even if PHP stops executing in htdocs.
-// It is a 0700 directory owned by this account, under /home/uploads (which is
-// on PHP's open_basedir allow-list, so it is readable from here).
-if (!defined('SF_PRIVATE_CONFIG')) {
-    define('SF_PRIVATE_CONFIG', '/home/uploads/sf_43438998/config.php');
+// ---------------------------------------------------------------------------
+// CONFIGURATION
+//
+// Resolution order (first hit wins, so environment beats files):
+//   1. Environment variables - DATABASE_URL, SF_DB_HOST, SF_DB_NAME, ...
+//      This is what a container host (Render, Railway, Fly) uses.
+//   2. A private config file above the web root. Candidates, in order:
+//        - $SF_CONFIG_PATH if set
+//        - <parent of htdocs>/sf-config.php   (portable, no account id baked in)
+//        - /home/uploads/sf_43438998/config.php  (legacy InfinityFree path)
+//   3. api/config.php inside the web root (denied by .htaccess).
+//
+// The old code hardcoded the InfinityFree path as the ONLY private location.
+// That account no longer exists, so the path is now just one candidate among
+// several and the app boots from env vars or a portable file instead.
+// ---------------------------------------------------------------------------
+
+if (!defined('SF_CONFIG_CANDIDATES')) {
+    $sfCandidates = [];
+    $sfEnvPath = getenv('SF_CONFIG_PATH');
+    if ($sfEnvPath !== false && $sfEnvPath !== '') {
+        $sfCandidates[] = $sfEnvPath;
+    }
+    // dirname(__DIR__, 2) from api/ is the directory ABOVE the web root.
+    $sfCandidates[] = dirname(__DIR__, 2) . '/sf-config.php';
+    $sfCandidates[] = '/home/uploads/sf_43438998/config.php';
+    define('SF_CONFIG_CANDIDATES', $sfCandidates);
+    define('SF_PRIVATE_CONFIG', $sfCandidates[0]);
+}
+
+// Environment variable -> config key. Env always wins over a file.
+function sf_env_map()
+{
+    return [
+        'database_url'                => 'DATABASE_URL',
+        'db_host'                     => 'SF_DB_HOST',
+        'db_name'                     => 'SF_DB_NAME',
+        'db_user'                     => 'SF_DB_USER',
+        'db_pass'                     => 'SF_DB_PASS',
+        'db_port'                     => 'SF_DB_PORT',
+        'db_ssl'                      => 'SF_DB_SSL',
+        'db_ssl_ca'                   => 'SF_DB_SSL_CA',
+        'db_ssl_verify'               => 'SF_DB_SSL_VERIFY',
+        'secret'                      => 'SF_SECRET',
+        'install_key'                 => 'SF_INSTALL_KEY',
+        'orchestrator_url'            => 'SF_ORCHESTRATOR_URL',
+        'orchestrator_token'          => 'SF_ORCHESTRATOR_TOKEN',
+        'orchestrator_mode'           => 'SF_ORCHESTRATOR_MODE',
+        'orchestrator_timeout'        => 'SF_ORCHESTRATOR_TIMEOUT',
+        'orchestrator_health_timeout' => 'SF_ORCHESTRATOR_HEALTH_TIMEOUT',
+    ];
 }
 
 function cfg($key)
 {
     static $config = null;
     if ($config === null) {
-        // Preferred: the private file above the web root.
-        if (is_readable(SF_PRIVATE_CONFIG)) {
-            $config = require SF_PRIVATE_CONFIG;
-        }
-        // Fallback: the in-web-root copy, kept only so a host that cannot read
-        // the private path still boots. It is denied by .htaccess.
-        if (!is_array($config) || !isset($config['db_host'])) {
-            $local = __DIR__ . '/config.php';
-            if (is_readable($local)) {
-                $maybe = require $local;
-                if (is_array($maybe) && isset($maybe['db_host'])) {
-                    $config = $maybe;
-                }
+        $config = [];
+
+        // 1. Environment variables.
+        foreach (sf_env_map() as $k => $envName) {
+            $value = getenv($envName);
+            if ($value !== false && $value !== '') {
+                $config[$k] = $value;
             }
         }
-        if (!is_array($config)) {
-            $config = [];
+
+        // 2. Private file(s) above the web root, then 3. the in-web-root copy.
+        $files = SF_CONFIG_CANDIDATES;
+        $files[] = __DIR__ . '/config.php';
+        foreach ($files as $path) {
+            if (!is_readable($path)) {
+                continue;
+            }
+            $maybe = require $path;
+            if (is_array($maybe)) {
+                foreach ($maybe as $k => $v) {
+                    // Do not let a file overwrite a value the environment set.
+                    if (!array_key_exists($k, $config)) {
+                        $config[$k] = $v;
+                    }
+                }
+            }
         }
     }
     return isset($config[$key]) ? $config[$key] : null;
 }
 
+// Parse a mysql:// connection string into its parts.
+function sf_parse_database_url($url)
+{
+    $parts = parse_url($url);
+    if ($parts === false || empty($parts['scheme'])) {
+        return null;
+    }
+    $out = [
+        'scheme' => strtolower($parts['scheme']),
+        'host'   => isset($parts['host']) ? $parts['host'] : '',
+        'port'   => isset($parts['port']) ? (int) $parts['port'] : null,
+        'user'   => isset($parts['user']) ? urldecode($parts['user']) : '',
+        'pass'   => isset($parts['pass']) ? urldecode($parts['pass']) : '',
+        'name'   => isset($parts['path']) ? ltrim($parts['path'], '/') : '',
+        'ssl'    => null,
+    ];
+    if (!empty($parts['query'])) {
+        parse_str($parts['query'], $q);
+        if (isset($q['ssl'])) {
+            $out['ssl'] = $q['ssl'];
+        }
+    }
+    return $out;
+}
+
+// Turn a PDO connection failure into something a human can act on.
+// Never includes the password.
+function sf_db_hint($host, $e)
+{
+    $msg  = $e->getMessage();
+    $code = (int) $e->getCode();
+    $hint = 'Database connection failed (host: ' . $host . '). ';
+
+    if (stripos($msg, 'getaddrinfo') !== false
+        || stripos($msg, 'Name or service not known') !== false
+        || stripos($msg, 'nodename nor servname') !== false
+        || stripos($msg, 'php_network_getaddresses') !== false
+        || stripos($msg, 'Temporary failure in name resolution') !== false) {
+        $hint .= 'The hostname does not resolve in DNS, so that database server no longer exists. '
+               . 'Create a new database and point DATABASE_URL (or db_host) at it.';
+    } elseif ($code === 1045 || stripos($msg, 'Access denied') !== false) {
+        $hint .= 'The username or password was rejected. Check db_user / db_pass.';
+    } elseif ($code === 1049 || stripos($msg, 'Unknown database') !== false) {
+        $hint .= 'That database name does not exist on the server. Create it first.';
+    } elseif (stripos($msg, 'timed out') !== false || stripos($msg, 'Connection refused') !== false) {
+        $hint .= 'The server refused the connection. Check the port, and that the host allows remote connections.';
+    } elseif (stripos($msg, 'SSL') !== false || stripos($msg, 'certificate') !== false) {
+        $hint .= 'TLS negotiation failed. Set db_ssl_ca to the provider CA bundle, or db_ssl=false for a local server.';
+    } else {
+        $hint .= 'Underlying error: ' . $msg;
+    }
+    return $hint;
+}
+
 function db()
 {
     static $pdo = null;
-    if ($pdo === null) {
-        $dsn = 'mysql:host=' . cfg('db_host') . ';dbname=' . cfg('db_name') . ';charset=utf8mb4';
-        $pdo = new PDO($dsn, cfg('db_user'), cfg('db_pass'), [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
-        $pdo->exec("SET time_zone = '+00:00'");
+    if ($pdo !== null) {
+        return $pdo;
     }
+
+    $host = cfg('db_host');
+    $name = cfg('db_name');
+    $user = cfg('db_user');
+    $pass = cfg('db_pass');
+    $port = cfg('db_port');
+    $ssl  = cfg('db_ssl');
+
+    // A single connection string takes precedence over the individual fields.
+    $url = cfg('database_url');
+    if ($url) {
+        $p = sf_parse_database_url($url);
+        if ($p === null) {
+            throw new RuntimeException('DATABASE_URL is not a valid connection string.');
+        }
+        if ($p['scheme'] !== 'mysql') {
+            throw new RuntimeException(
+                'DATABASE_URL uses "' . $p['scheme'] . '", but this app\'s SQL is MySQL-specific '
+                . '(REPLACE INTO, ON DUPLICATE KEY UPDATE, ENUM columns, SHOW COLUMNS, backticks). '
+                . 'Use a MySQL-compatible database: mysql://user:pass@host:port/dbname'
+            );
+        }
+        $host = $p['host'];
+        $name = $p['name'];
+        $user = $p['user'];
+        $pass = $p['pass'];
+        if ($p['port']) {
+            $port = $p['port'];
+        }
+        if ($p['ssl'] !== null) {
+            $ssl = $p['ssl'];
+        }
+    }
+
+    if (!$host || !$name) {
+        throw new RuntimeException(
+            'No database is configured. Set DATABASE_URL, or db_host/db_name/db_user/db_pass '
+            . 'in the config file, or the SF_DB_* environment variables.'
+        );
+    }
+
+    $dsn = 'mysql:host=' . $host . ';dbname=' . $name . ';charset=utf8mb4';
+    if ($port) {
+        $dsn = 'mysql:host=' . $host . ';port=' . (int) $port . ';dbname=' . $name . ';charset=utf8mb4';
+    }
+
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT            => 10,
+    ];
+
+    // Managed MySQL (TiDB Cloud, Aiven, PlanetScale) requires TLS.
+    $sslOn = $ssl !== null && $ssl !== '' && $ssl !== 'false' && $ssl !== '0' && $ssl !== false;
+    if ($sslOn && defined('PDO::MYSQL_ATTR_SSL_CA')) {
+        $ca = cfg('db_ssl_ca');
+        if ($ca && is_readable($ca)) {
+            $options[PDO::MYSQL_ATTR_SSL_CA] = $ca;
+        }
+        if (defined('PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT')) {
+            $verify = cfg('db_ssl_verify');
+            $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = ($verify === null || $verify === '' || $verify === 'true' || $verify === '1');
+        }
+    }
+
+    try {
+        $pdo = new PDO($dsn, $user, $pass, $options);
+    } catch (PDOException $e) {
+        throw new RuntimeException(sf_db_hint($host, $e), 0, $e);
+    }
+
+    // Offset form works even when the server has no timezone tables loaded.
+    try {
+        $pdo->exec("SET time_zone = '+00:00'");
+    } catch (Throwable $e) {
+        // Not fatal: some managed servers restrict session variables.
+    }
+
     return $pdo;
+}
+
+// Non-throwing connectivity probe, used by api/health.php.
+function db_ping()
+{
+    $started = microtime(true);
+    try {
+        $pdo = db();
+        $pdo->query('SELECT 1')->fetchColumn();
+        return [
+            'ok'      => true,
+            'ms'      => (int) round((microtime(true) - $started) * 1000),
+            'error'   => null,
+        ];
+    } catch (Throwable $e) {
+        return [
+            'ok'    => false,
+            'ms'    => (int) round((microtime(true) - $started) * 1000),
+            'error' => $e->getMessage(),
+        ];
+    }
+}
+
+// Which of the app's tables actually exist. Used by health + install.
+function db_missing_tables(array $expected)
+{
+    try {
+        $rows = db()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $e) {
+        return $expected;
+    }
+    $have = array_map('strtolower', $rows);
+    $missing = [];
+    foreach ($expected as $t) {
+        if (!in_array(strtolower($t), $have, true)) {
+            $missing[] = $t;
+        }
+    }
+    return $missing;
 }
 
 function respond($data, $status = 200)

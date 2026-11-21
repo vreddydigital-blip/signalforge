@@ -120,3 +120,7 @@ venv/
 .pytest_cache/
 *.egg-info/
 orchestrator/.env
+
+# SignalForge real config (never commit - use sf-config.example.php)
+infinityfree/sf-config.php
+sf-config.php
