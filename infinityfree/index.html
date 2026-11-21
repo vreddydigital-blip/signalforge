@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignalForge — Experimentation Platform</title>
+<meta name="description" content="SignalForge: run A/B tests, track exposures and conversions, and read the results.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e5643c'/%3E%3Cpath d='M9 22V10l7 7 7-7v12' stroke='%23fff' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+
+<!-- ============================ AUTH ============================ -->
+<div id="auth-screen" class="auth-screen" hidden>
+  <div class="auth-card">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="26" height="26"><path d="M9 22V10l7 7 7-7v12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="brand-name">SignalForge</span>
+    </div>
+
+    <h1 class="auth-title" id="auth-title">Welcome back</h1>
+    <p class="auth-sub" id="auth-sub">Log in to your experimentation workspace.</p>
+
+    <form id="auth-form" novalidate>
+      <div class="field" id="name-field" hidden>
+        <label for="f-name">Name</label>
+        <input id="f-name" name="name" type="text" autocomplete="name" placeholder="Ada Lovelace">
+      </div>
+      <div class="field">
+        <label for="f-email">Email</label>
+        <input id="f-email" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      </div>
+      <div class="field">
+        <label for="f-password">Password</label>
+        <input id="f-password" name="password" type="password" autocomplete="current-password" placeholder="At least 8 characters" required>
+      </div>
+
+      <div class="form-error" id="auth-error" role="alert" hidden></div>
+
+      <button class="btn btn-primary btn-block" id="auth-submit" type="submit">Log in</button>
+    </form>
+
+    <p class="auth-switch">
+      <span id="auth-switch-text">New to SignalForge?</span>
+      <button type="button" class="link-btn" id="auth-switch-btn">Create an account</button>
+    </p>
+  </div>
+</div>
+
+<!-- ============================ APP ============================ -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="24" height="24"><path d="M9 22V10l7 7 7-7v12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="brand-name">SignalForge</span>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-view="experiments" role="tab">Experiments</button>
+      <button class="tab" data-view="results" role="tab">Results</button>
+    </nav>
+
+    <div class="user-box">
+      <div class="user-meta">
+        <span class="user-name" id="user-name">—</span>
+        <span class="user-plan" id="user-plan">—</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="logout-btn" type="button">Log out</button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ---------------- Experiments ---------------- -->
+    <section class="view" id="view-experiments">
+      <div class="view-head">
+        <div>
+          <h2>Experiments</h2>
+          <p class="muted" id="exp-count">—</p>
+        </div>
+        <button class="btn btn-primary" id="new-exp-btn" type="button">
+          <span aria-hidden="true">+</span> New experiment
+        </button>
+      </div>
+
+      <div id="exp-empty" class="empty" hidden>
+        <div class="empty-icon" aria-hidden="true">◐</div>
+        <h3>No experiments yet</h3>
+        <p>Create your first A/B test to start collecting exposures and conversions.</p>
+        <button class="btn btn-primary" id="empty-new-btn" type="button">Create an experiment</button>
+      </div>
+
+      <div id="exp-list" class="exp-grid"></div>
+    </section>
+
+    <!-- ---------------- Results ---------------- -->
+    <section class="view" id="view-results" hidden>
+      <div class="view-head">
+        <div>
+          <h2>Results</h2>
+          <p class="muted">Aggregated across all your experiments.</p>
+        </div>
+        <div class="range-picker" role="group" aria-label="Date range">
+          <button class="range-btn" data-range="7d">7d</button>
+          <button class="range-btn is-active" data-range="30d">30d</button>
+          <button class="range-btn" data-range="90d">90d</button>
+          <button class="range-btn" data-range="all">All</button>
+        </div>
+      </div>
+
+      <div class="stat-grid" id="stat-grid"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Exposures &amp; conversions</h3>
+          <div class="legend">
+            <span class="legend-item"><i class="dot dot-exp"></i>Exposures</span>
+            <span class="legend-item"><i class="dot dot-conv"></i>Conversions</span>
+          </div>
+        </div>
+        <div id="chart" class="chart"></div>
+      </div>
+
+      <div class="breakdown-grid" id="breakdown-grid"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============================ MODAL ============================ -->
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h3 id="modal-title">New experiment</h3>
+      <button class="icon-btn" id="modal-close" type="button" aria-label="Close">✕</button>
+    </div>
+
+    <form id="exp-form" class="modal-body" novalidate>
+      <div class="field">
+        <label for="e-name">Experiment name</label>
+        <input id="e-name" type="text" placeholder="Homepage hero CTA" required>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="e-kind">Type</label>
+          <select id="e-kind">
+            <option value="A/B test">A/B test</option>
+            <option value="Multivariate">Multivariate</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="e-framework">Framework</label>
+          <select id="e-framework">
+            <option value="PXL">PXL</option>
+            <option value="LIFT">LIFT</option>
+            <option value="Custom">Custom</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="e-goal">Goal</label>
+          <input id="e-goal" type="text" placeholder="Increase signups" required>
+        </div>
+        <div class="field">
+          <label for="e-audience">Audience</label>
+          <input id="e-audience" type="text" placeholder="All visitors" required>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="e-event">Conversion event</label>
+          <input id="e-event" type="text" placeholder="signup" required>
+        </div>
+        <div class="field">
+          <label for="e-traffic">Traffic %</label>
+          <input id="e-traffic" type="number" min="1" max="100" value="100" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Variants <span class="hint">2–8, first is the control</span></label>
+        <div id="variant-rows" class="variant-rows"></div>
+        <button type="button" class="link-btn" id="add-variant">+ Add variant</button>
+      </div>
+
+      <div class="form-error" id="exp-error" role="alert" hidden></div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="exp-submit">Create experiment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>
