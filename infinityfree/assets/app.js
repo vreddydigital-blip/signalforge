@@ -79,6 +79,16 @@
     expError: $('exp-error'),
     expSubmit: $('exp-submit'),
     eName: $('e-name'),
+    eUrl: $('e-url'),
+    eUrlCheck: $('e-url-check'),
+    eUrlHint: $('e-url-hint'),
+    eObjective: $('e-objective'),
+    eInsight: $('e-insight'),
+    eChange: $('e-change'),
+    eReason: $('e-reason'),
+    eHypothesis: $('e-hypothesis'),
+    eGen: $('e-gen'),
+    eHypHint: $('e-hyp-hint'),
     eKind: $('e-kind'),
     eFramework: $('e-framework'),
     eGoal: $('e-goal'),
@@ -359,6 +369,9 @@
             '<div class="exp-name">' + esc(e.name) + '</div>' +
             '<span class="badge ' + statusClass(e.status) + '">' + esc(e.status) + '</span>' +
           '</div>' +
+          (e.pageUrl
+            ? '<span class="exp-url"><a href="' + esc(e.pageUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(e.pageUrl) + '</a></span>'
+            : '<span class="exp-url">No page URL set</span>') +
           '<div class="exp-meta">' +
             '<span>' + esc(e.kind) + '</span>' +
             '<span>' + esc(e.goal) + '</span>' +
@@ -585,9 +598,138 @@
     addVariantRow('Control');
     addVariantRow('Variant B');
     el.eTraffic.value = '100';
+    setUrlState('idle');
+    el.eHypHint.textContent = 'Fill in the three inputs above and press Generate to draft this.';
     el.modal.hidden = false;
     el.eName.focus();
   }
+
+  // ------------------------------------------------------- page URL + hypothesis
+  // The API stores pageUrl as an optional free-text field, so the UI validates
+  // it here rather than relying on the server. "Check page" is a local sanity
+  // check only - it does not fetch the URL (that would be blocked by CORS on
+  // most sites and would leak the visitor's IP to a third party).
+  function normaliseUrl(raw) {
+    var v = String(raw || '').trim();
+    if (!v) return '';
+    if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+    return v;
+  }
+
+  function urlProblem(raw) {
+    var v = normaliseUrl(raw);
+    if (!v) return 'Add the page where this experiment will run.';
+    var parsed;
+    try {
+      parsed = new URL(v);
+    } catch (e) {
+      return 'That does not look like a valid URL.';
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return 'Use an http:// or https:// address.';
+    }
+    if (!parsed.hostname || parsed.hostname.indexOf('.') === -1) {
+      return 'Add a full domain, e.g. https://yourwebsite.com/pricing';
+    }
+    return '';
+  }
+
+  function setUrlState(state, message) {
+    el.eUrlHint.className = state === 'ok' ? 'field-ok' : (state === 'bad' ? 'field-bad' : 'field-hint');
+    if (message) {
+      el.eUrlHint.textContent = message;
+    } else if (state === 'ok') {
+      el.eUrlHint.textContent = 'Page URL looks valid and is ready for tracking.';
+    } else {
+      el.eUrlHint.textContent = 'The page where this experiment will run.';
+    }
+  }
+
+  el.eUrlCheck.addEventListener('click', function () {
+    var problem = urlProblem(el.eUrl.value);
+    if (problem) {
+      setUrlState('bad', problem);
+      el.eUrl.focus();
+      return;
+    }
+    el.eUrl.value = normaliseUrl(el.eUrl.value);
+    setUrlState('ok');
+  });
+
+  el.eUrl.addEventListener('input', function () {
+    setUrlState('idle');
+  });
+
+  // Builds a MECLABS-style hypothesis from whatever the user has filled in.
+  // Every clause degrades gracefully, so a partial brief still produces a
+  // usable sentence instead of a template full of blanks.
+  //
+  // The inputs are free text, so people write them in mixed forms: "Add a
+  // comparison summary" (imperative) or "a comparison summary" (noun phrase).
+  // Naively prefixing "changing " gives "changing add a comparison summary",
+  // and prefixing "will improve " to a goal like "Increase signups" gives
+  // "improve increase signups". Both are stripped here so the sentence reads
+  // naturally whichever way the user typed it.
+  var LEADING_VERB = /^(add|adding|change|changing|remove|removing|replace|replacing|move|moving|make|making|use|using|show|showing|simplify|simplifying|reduce|reducing|increase|increasing|improve|improving|test|testing|try|trying|create|creating|update|updating|redesign|redesigning|rewrite|rewriting|shorten|shortening|clarify|clarifying)\s+/i;
+
+  function stripLeadingVerb(text) {
+    return text.replace(LEADING_VERB, '');
+  }
+
+  function lowerFirst(text) {
+    if (!text) return text;
+    // Leave acronyms and proper nouns alone (e.g. "CTA", "PXL").
+    if (text.length > 1 && text.charAt(1) === text.charAt(1).toUpperCase()) return text;
+    return text.charAt(0).toLowerCase() + text.slice(1);
+  }
+
+  function buildHypothesis() {
+    var insight = el.eInsight.value.trim();
+    var change = el.eChange.value.trim();
+    var reason = el.eReason.value.trim();
+    var audience = el.eAudience.value.trim();
+    var goal = el.eGoal.value.trim();
+
+    if (!insight && !change && !reason) return '';
+
+    var because = insight
+      ? 'Because ' + lowerFirst(insight)
+      : 'Because we see an opportunity on this page';
+
+    // "changing <noun phrase>" reads correctly for both input styles.
+    var changing = change
+      ? 'changing ' + lowerFirst(stripLeadingVerb(change))
+      : 'changing this experience';
+
+    // Goals are usually written as outcomes ("Increase signups"), so they slot
+    // in after "will improve" without their own verb. Both goal and audience
+    // are required fields, but Generate can be pressed before they are filled,
+    // so each clause is dropped rather than left with a blank in it.
+    var goalText = goal ? lowerFirst(stripLeadingVerb(goal)) : '';
+    var will = goalText ? 'will improve ' + goalText : 'will improve the primary goal';
+    if (audience) will += ' for ' + lowerFirst(audience);
+
+    var why = reason ? ' because ' + lowerFirst(reason) : '';
+
+    return because + ', ' + changing + ' ' + will + why + '.';
+  }
+
+  el.eGen.addEventListener('click', function () {
+    var text = buildHypothesis();
+    if (!text) {
+      el.eHypHint.className = 'field-bad';
+      el.eHypHint.textContent = 'Add an observed insight, experience change or behavioral reason first.';
+      return;
+    }
+    el.eHypothesis.value = text.slice(0, 240);
+    el.eHypHint.className = 'field-hint';
+    el.eHypHint.textContent = el.eHypothesis.value.length + '/240 characters.';
+  });
+
+  el.eHypothesis.addEventListener('input', function () {
+    el.eHypHint.className = 'field-hint';
+    el.eHypHint.textContent = el.eHypothesis.value.length + '/240 characters.';
+  });
 
   function closeModal() {
     el.modal.hidden = true;
@@ -622,6 +764,7 @@
     var audience = el.eAudience.value.trim();
     var conversionEvent = el.eEvent.value.trim();
     var traffic = parseInt(el.eTraffic.value, 10);
+    var pageUrl = normaliseUrl(el.eUrl.value);
 
     var variantNames = Array.prototype.map.call(
       el.variantRows.querySelectorAll('.variant-name-input'),
@@ -640,6 +783,17 @@
     if (isNaN(traffic) || traffic < 1 || traffic > 100) return bad('Traffic must be between 1 and 100.');
     if (variantNames.length < 2) return bad('Add at least 2 variants with names.');
 
+    // The page URL is optional on the API, but an experiment without one has
+    // nothing to target, so the UI asks for it. Validate before sending so the
+    // user gets the message next to the field rather than as a server error.
+    var urlIssue = urlProblem(el.eUrl.value);
+    if (urlIssue) {
+      setUrlState('bad', urlIssue);
+      el.eUrl.focus();
+      return bad(urlIssue);
+    }
+    el.eUrl.value = pageUrl;
+
     state.busy = true;
     el.expSubmit.disabled = true;
     el.expSubmit.textContent = 'Creating…';
@@ -655,7 +809,13 @@
         audience: audience,
         conversionEvent: conversionEvent,
         traffic: traffic,
-        variantNames: variantNames
+        variantNames: variantNames,
+        pageUrl: pageUrl,
+        objective: el.eObjective.value.trim(),
+        hypothesis: el.eHypothesis.value.trim(),
+        observedInsight: el.eInsight.value.trim(),
+        experienceChange: el.eChange.value.trim(),
+        behaviorReason: el.eReason.value.trim()
       }
     })
       .then(function () {

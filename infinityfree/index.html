@@ -145,6 +145,15 @@
         <input id="e-name" type="text" placeholder="Homepage hero CTA" required>
       </div>
 
+      <div class="field">
+        <label for="e-url">Test page URL</label>
+        <div class="url-row">
+          <input id="e-url" type="url" placeholder="https://yourwebsite.com/pricing" autocomplete="url">
+          <button type="button" class="btn btn-ghost btn-sm" id="e-url-check">Check page</button>
+        </div>
+        <span class="field-hint" id="e-url-hint">The page where this experiment will run.</span>
+      </div>
+
       <div class="field-row">
         <div class="field">
           <label for="e-kind">Type</label>
@@ -182,6 +191,40 @@
         <div class="field">
           <label for="e-traffic">Traffic %</label>
           <input id="e-traffic" type="number" min="1" max="100" value="100" required>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <p class="form-section-title">The brief</p>
+
+        <div class="field">
+          <label for="e-objective">Objective <span class="hint">optional</span></label>
+          <input id="e-objective" type="text" placeholder="What decision should this test help you make?">
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="e-insight">Observed insight <span class="hint">optional</span></label>
+            <input id="e-insight" type="text" placeholder="e.g. Visitors miss the pricing comparison">
+          </div>
+          <div class="field">
+            <label for="e-change">Experience change <span class="hint">optional</span></label>
+            <input id="e-change" type="text" placeholder="e.g. Add a comparison summary">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="e-reason">Behavioral reason <span class="hint">optional</span></label>
+          <input id="e-reason" type="text" placeholder="Why should this change affect visitor behavior?">
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="e-hypothesis">Hypothesis <span class="hint">optional</span></label>
+            <button type="button" class="gen-btn" id="e-gen">Generate</button>
+          </div>
+          <textarea id="e-hypothesis" rows="3" placeholder="Because [insight], changing [experience] for [audience] will improve [goal] because [reason]."></textarea>
+          <span class="field-hint" id="e-hyp-hint">Fill in the three inputs above and press Generate to draft this.</span>
         </div>
       </div>
 

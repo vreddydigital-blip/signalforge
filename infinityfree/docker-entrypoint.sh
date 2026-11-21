@@ -37,7 +37,26 @@ echo "SignalForge: MPM modules enabled: $(ls /etc/apache2/mods-enabled/ 2>/dev/n
 sed -ri "s/^Listen 80$/Listen ${PORT}/" /etc/apache2/ports.conf
 sed -ri "s/:80>/:${PORT}>/" /etc/apache2/sites-available/000-default.conf
 
-# ---- 3. Validate before exec ---------------------------------------------
+# ---- 3. Asset versioning --------------------------------------------------
+# index.html references /assets/app.css and /assets/app.js without a hash, and
+# .htaccess caches .js/.css for an hour. Without a version marker a browser
+# keeps the OLD bundle for up to an hour after a deploy, so a fix can look
+# broken to a user who already has the page open. Rewriting the references to
+# include a content hash makes each deploy a new URL, which the cache cannot
+# serve stale. Runs at container start, so it always matches the image.
+if [ -f /var/www/html/index.html ]; then
+    for asset in app.css app.js; do
+        if [ -f "/var/www/html/assets/${asset}" ]; then
+            hash=$(md5sum "/var/www/html/assets/${asset}" | cut -c1-10)
+            # Strip any existing ?v= first so a container restart (which re-runs
+            # this script on the same image) cannot stack query strings.
+            sed -i -E "s|/assets/${asset}(\\?v=[a-f0-9]+)*|/assets/${asset}?v=${hash}|g" /var/www/html/index.html
+            echo "SignalForge: ${asset} -> v=${hash}"
+        fi
+    done
+fi
+
+# ---- 4. Validate before exec ---------------------------------------------
 # If the config is broken, print the reason and exit non-zero. A clear log
 # beats a crash loop.
 if ! apache2ctl -t 2>&1; then
