@@ -65,6 +65,14 @@ DirectoryIndex index.html
   RewriteBase /
 
   # Force HTTPS (InfinityFree issues a free certificate; harmless if not yet active).
+  #
+  # The health endpoint is exempt. Container platforms (Railway, Render, Fly)
+  # probe it from inside the container over plain HTTP, with no
+  # X-Forwarded-Proto header, so a redirect here makes the probe see 301
+  # instead of 200 and the deploy is marked unhealthy even though the app is
+  # fine. The endpoint returns no secrets, so serving it over HTTP internally
+  # is safe; external traffic still gets redirected.
+  RewriteCond %{REQUEST_URI} !^/api/health\.php$
   RewriteCond %{HTTPS} !=on
   RewriteCond %{HTTP:X-Forwarded-Proto} !https
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]

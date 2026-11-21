@@ -3,15 +3,24 @@
 #
 # This is the recommended way to run the app now. The previous host
 # (InfinityFree) deleted the account and its MySQL server, which is what broke
-# login and register. A container host (Render, Railway, Fly) keeps the app and
+# login and register. A container host (Railway, Render, Fly) keeps the app and
 # its database together, so one cannot vanish without the other.
 #
-# Build:  docker build -t signalforge .
-# Run:    docker run -p 8080:80 \
-#           -e DATABASE_URL="mysql://user:pass@host:3306/dbname" \
-#           -e SF_SECRET="$(openssl rand -hex 32)" \
-#           -e SF_INSTALL_KEY="some-random-string" \
-#           signalforge
+# IMPORTANT - BUILD CONTEXT
+# Railway (and Render) always use the REPOSITORY ROOT as the build context,
+# even when the Dockerfile lives in a subdirectory. Every COPY path below is
+# therefore relative to the repo root, not to this file. Building from inside
+# this directory will fail with "COPY ... no such file or directory".
+#
+# Build (from the repository root):
+#   docker build -f infinityfree/Dockerfile -t signalforge .
+#
+# Run:
+#   docker run -p 8080:80 \
+#     -e DATABASE_URL="mysql://user:pass@host:3306/dbname" \
+#     -e SF_SECRET="$(openssl rand -hex 32)" \
+#     -e SF_INSTALL_KEY="some-random-string" \
+#     signalforge
 #
 # Then open /api/install.php?key=SF_INSTALL_KEY once, and /api/health.php.
 # ---------------------------------------------------------------------------
@@ -26,7 +35,8 @@ WORKDIR /var/www/html
 
 # Copy the app. api/config.php stays a stub - real values come from the
 # environment, so no credentials are ever baked into the image.
-COPY . /var/www/html/
+# Paths are repo-root relative: see BUILD CONTEXT above.
+COPY infinityfree/ /var/www/html/
 
 # Apache needs to read .htaccess, and the app writes nothing to disk.
 RUN chown -R www-data:www-data /var/www/html \
@@ -40,7 +50,7 @@ RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-av
 # Apache's default vhost listens on 80, so without this the app is unreachable
 # on any platform that does not use port 80. The entrypoint rewrites the listen
 # port at start-up from $PORT, defaulting to 80 when it is not set.
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY infinityfree/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV PORT=80
